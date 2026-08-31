@@ -4,7 +4,7 @@
 * **Fecha:** 2026-08-30
 * **Decisores:** Jeremi Alcala
 * **Fase AI-DLC:** 02-design
-* **Versión:** 0.2.0
+* **Versión:** 0.5.0
 * **Gate:** 1
 * **Alcance:** receptor + ingress por túnel + socket-proxy + cadena de suministro de imágenes + estado en disco
 * **Metodología:** STRIDE + DREAD

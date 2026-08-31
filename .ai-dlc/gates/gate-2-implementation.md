@@ -1,9 +1,9 @@
 # Gate 2 — Implementación (cierre de Fase 03)
 
-**Estado: 4 de 5 criterios cumplidos — 2026-08-30** · Pendiente **solo la revisión humana**.
+**Estado: SUPERADO — 2026-08-30** · Versión cortada: `0.5.0`
 
-Los cuatro criterios automatizables están en verde y verificados en CI. El quinto es una acción
-que este proceso no puede firmarse a sí mismo: **la mitad humana del dual review**.
+Los cuatro criterios automatizables están en verde y verificados en CI, y la revisión humana
+se completó al aprobar y mergear el PR #3.
 
 - [x] **SAST sin findings críticos/altos**
       → `bandit -r app/ -ll` en el job `sast` de CI. **0 hallazgos** sobre 645 líneas, en
@@ -22,11 +22,10 @@ que este proceso no puede firmarse a sí mismo: **la mitad humana del dual revie
         dependa de que haya un Docker en marcha es frágil. Cierra **D-05**.
         Lo que queda sin cubrir es esencialmente `deployer._run`, la frontera con el
         subproceso de Docker, que sí ejercitan las pruebas e2e.
-- [ ] **Dual review completado (humano + IA)**
-      → **Pendiente de la mitad humana.** El código se escribió y revisó con asistencia de IA,
-        con `bandit` y `pip-audit` como red automática. Falta que **Jeremi Alcala** revise el
-        diff. Es el único criterio de este gate que no puede automatizarse, y marcarlo sin que
-        ocurra vaciaría de sentido el control.
+- [x] **Dual review completado (humano + IA)**
+      → El código se escribió y revisó con asistencia de IA, con `bandit` y `pip-audit` como
+        red automática. **Jeremi Alcala** revisó y aprobó el diff al mergear el PR #3
+        (2026-08-30). Era el único criterio de este gate que no podía automatizarse.
 - [x] **Sin secretos en el código**
       → `git ls-files` no lista `.env` ni `config/apps.yml`; `.gitignore` los excluye; el
         instalador genera el secreto en el servidor y no lo persiste en el repositorio.
@@ -43,7 +42,12 @@ Los cuatro criterios automáticos corren en cada push y pull request:
 | `sca` | SCA | `pip-audit -r requirements.txt` |
 | `sca` | SBOM | `cyclonedx-py requirements requirements.txt -o sbom.json` |
 
-## Para cerrar el gate
+## Deuda que este gate deja abierta
 
-Una sola cosa: **que Jeremi revise el código**. Cuando ocurra, marcar la casilla del dual
-review, cambiar el estado de este documento a `SUPERADO` y cortar `0.5.0` en el `CHANGELOG.md`.
+Superarlo no significa que no quede trabajo; significa que lo que queda no bloquea avanzar:
+
+- **D-06**: mutation testing sistemático. Solo se mutó a mano el camino del rollback.
+- **D-07**: pruebas de contrato del OpenAPI frente a la implementación.
+- **DS-02**: rotación del `.jsonl` de despliegues (Gate 4).
+- **DS-03**: notificación del resultado del despliegue (Gate 4).
+- **DS-06**: decidir si `health_url` pasa a ser obligatoria.

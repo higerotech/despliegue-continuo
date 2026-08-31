@@ -8,18 +8,45 @@ y este proyecto se adhiere a [Versionado Semántico](https://semver.org/lang/es/
 Convención de corte por gate: Gate 0 → `0.1.0`, Gate 1 → `0.2.0`, Gate 2 → `0.3.0`,
 Gate 3 → `0.4.0`, Gate 4 → `0.5.0`, Gate 5 → `1.0.0`.
 
+> **Esta convención dejó de cumplirse en `0.3.0`.** Las versiones `0.3.0` y `0.4.0` se cortaron
+> para marcar *documentación de fase entregada* con sus gates aún abiertos, así que el mapeo
+> gate → versión ya no es 1:1. A partir de aquí manda el contenido de cada versión, no la
+> aritmética de la tabla: `0.5.0` cierra el **Gate 2**, no el Gate 4.
+
 > **Nota sobre los cuatro primeros cortes.** El código se implementó y verificó **antes** de
 > aplicar AI-DLC (ADR-0001), así que las cuatro versiones se cortan en la misma fecha con
 > evidencia que ya existía: no hubo cuatro ciclos sucesivos y simular que los hubo falsearía el
 > registro.
 >
 > **Importante:** una versión cortada marca *documentación de fase entregada*, no
-> *gate superado*. **Los Gates 0 y 1 están superados; los Gates 2 y 3 NO.** Sus checklists
-> exigen SAST, SCA, cobertura medida, DAST y mutation testing, y nada de eso se ha ejecutado.
-> El detalle de lo que falta está en `.ai-dlc/gates/gate-2-implementation.md` y
-> `gate-3-testing.md`.
+> *gate superado*. Cuando se cortaron `0.3.0` y `0.4.0`, los Gates 2 y 3 seguían abiertos y así
+> quedó escrito en sus entradas. **El Gate 2 se superó después, en `0.5.0`; el Gate 3 sigue
+> abierto.** Estado vigente de cada uno en `.ai-dlc/gates/`.
 
 ## [Unreleased]
+
+**Para cerrar el Gate 3, que sigue abierto:**
+
+- Matriz OWASP ejecutada de forma sistemática.
+- **D-06**: mutation testing sistemático (`mutmut`), objetivo ≥ 60 %.
+- **D-07**: pruebas de contrato del OpenAPI frente a la implementación.
+- DAST — de valor marginal bajo para 4 endpoints sin sesiones ni base de datos, pero es
+  criterio del gate.
+
+**Para el Gate 4 (despliegue):**
+
+- **DS-02**: rotación del `.jsonl` de despliegues.
+- **DS-03**: notificación del resultado del despliegue a un canal externo — hoy un despliegue
+  fallido no se comunica a GitHub ni a ningún sitio.
+- **DS-06**: decidir si `health_url` pasa a ser obligatoria en `config.load_apps`.
+- Política de retención de imágenes en GHCR.
+
+## [0.5.0] - 2026-08-30
+
+Cierre de **Gate 2 (implementación)**, el primero que se supera con los cinco criterios
+cumplidos: SAST, SCA, cobertura medida, sin secretos y **dual review completo**. La mitad
+humana la aportó la revisión del PR #3; hasta entonces el gate se mantuvo deliberadamente
+abierto en lugar de darse por bueno a sí mismo.
 
 ### Añadido
 
@@ -82,23 +109,6 @@ Gate 3 → `0.4.0`, Gate 4 → `0.5.0`, Gate 5 → `1.0.0`.
 - **D-06**: mutation testing sistemático (`mutmut`). La mutación del rollback se hizo a mano.
 - **D-07**: pruebas de contrato. Nada valida hoy el OpenAPI de `interfaces-contract.md` frente
   a la implementación real.
-
-**Para cerrar los Gates 2 y 3, que siguen abiertos:**
-
-- **Gate 2**: 4 de 5 criterios cumplidos. Queda **solo la revisión humana del código**, que no
-  puede automatizarse. Al hacerla, cortar `0.5.0`.
-- **Gate 3**: quedan la matriz OWASP ejecutada de forma sistemática, DAST, pruebas de contrato
-  (**D-07**) y mutation testing sistemático (**D-06**).
-
-**Para el Gate 4 (despliegue):**
-
-- **DS-02**: rotación del `.jsonl` de despliegues.
-- **DS-03**: notificación del resultado del despliegue a un canal externo — hoy un despliegue
-  fallido no se comunica a GitHub ni a ningún sitio.
-- **DS-05 / D-04**: `pip-audit` y SBOM del receptor en CI.
-- **DS-06**: decidir si `health_url` pasa a ser obligatoria en `config.load_apps`.
-- Política de retención de imágenes en GHCR.
-
 ## [0.4.0] - 2026-08-30
 
 Documentación de la **fase 04 (pruebas)**. **Gate 3 NO superado**: faltan pruebas de contrato y
@@ -182,7 +192,8 @@ implementado.
   contrario.
 - Estructura `.ai-dlc/` con los seis gates y las plantillas.
 
-[Unreleased]: https://github.com/higerotech/despliegue-continuo/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/higerotech/despliegue-continuo/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/higerotech/despliegue-continuo/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/higerotech/despliegue-continuo/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/higerotech/despliegue-continuo/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/higerotech/despliegue-continuo/compare/v0.1.0...v0.2.0

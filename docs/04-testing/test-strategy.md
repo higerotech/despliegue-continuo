@@ -4,7 +4,7 @@
 * **Fecha:** 2026-08-30
 * **Decisores:** Jeremi Alcala
 * **Fase AI-DLC:** 04-testing
-* **Versión:** 0.4.2
+* **Versión:** 0.5.0
 * **Gate:** 3
 * **Alcance:** receptor (`receiver/`), ciclo de despliegue contra Docker real y verificación manual de la superficie del socket-proxy
 * **Estado de la suite:** **91 pruebas, todas en verde** — 85 rápidas (6 s, **93,47 % de cobertura de rama**) + 6 de extremo a extremo contra Docker (2 min 20 s)
