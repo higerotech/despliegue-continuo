@@ -97,7 +97,12 @@ rsync -a --delete \
 chown -R "$SERVICE_USER:$SERVICE_USER" "$APP_DIR"
 
 log "instalando dependencias en el entorno virtual"
-if [[ ! -x "$APP_DIR/.venv/bin/python" ]]; then
+# Se comprueba pip, no python: un venv creado sin ensurepip tiene el interprete
+# pero no pip, y mirar solo python daba por bueno un entorno inservible. Si
+# esta incompleto se rehace, que es barato y deja el estado limpio.
+if [[ ! -x "$APP_DIR/.venv/bin/pip" ]]; then
+    [[ -e "$APP_DIR/.venv" ]] && log "el entorno virtual estaba incompleto; se rehace"
+    rm -rf "$APP_DIR/.venv"
     sudo -u "$SERVICE_USER" python3 -m venv "$APP_DIR/.venv"
 fi
 sudo -u "$SERVICE_USER" "$APP_DIR/.venv/bin/pip" install --quiet --upgrade pip
