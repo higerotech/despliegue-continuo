@@ -1,5 +1,10 @@
 # despliegue-continuo
 
+[![CI](https://github.com/higerotech/despliegue-continuo/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/higerotech/despliegue-continuo/actions/workflows/ci.yml)
+[![Smoke de contratos externos](https://github.com/higerotech/despliegue-continuo/actions/workflows/smoke.yml/badge.svg)](https://github.com/higerotech/despliegue-continuo/actions/workflows/smoke.yml)
+[![Salud del artefacto](https://github.com/higerotech/despliegue-continuo/actions/workflows/health.yml/badge.svg)](https://github.com/higerotech/despliegue-continuo/actions/workflows/health.yml)
+[![Última versión](https://img.shields.io/github/v/tag/higerotech/despliegue-continuo?label=versi%C3%B3n&sort=semver)](https://github.com/higerotech/despliegue-continuo/tags)
+
 Despliegue continuo desde GitHub a un servidor Linux propio, mediante webhooks
 firmados, sin abrir ni un puerto en el router.
 
@@ -205,3 +210,17 @@ contrato, DAST y mutation testing sistemático). El detalle está en
 
 Calidad verificada en CI en cada push: **91 pruebas**, **93,47 % de cobertura de rama**,
 `bandit` sin hallazgos y `pip-audit` sin vulnerabilidades.
+
+## Qué vigila cada badge
+
+| Badge | Cuándo corre | Qué falla si se pone en rojo |
+|---|---|---|
+| **CI** | Cada push y pull request | Pruebas, umbral de cobertura, SAST o SCA |
+| **Smoke de contratos externos** | Lunes, y a demanda | `docker/metadata-action` dejó de producir `sha-<7>`, o las imágenes del escenario e2e cambiaron de comportamiento. **No bloquea el CI**: avisa de drift externo antes de que lo sufra un despliegue |
+| **Salud del artefacto** | A diario, y a demanda | El receptor publicado no responde, o **el borde dejó de filtrar por ruta** y `/status` volvió a ser alcanzable (regresión de [T13](docs/02-design/threat-model.md)) |
+| **Última versión** | — | Último tag SemVer publicado |
+
+La sonda de salud no usa `/health`: desde que el túnel filtra por ruta, ese endpoint devuelve
+`404` en el Edge. Usa `POST /webhook` sin firma esperando **401**, que en una sola petición
+prueba que el túnel enruta, que el receptor está vivo y que la validación HMAC sigue activa.
+Un `202` ahí sería mucho peor que un `500`.
