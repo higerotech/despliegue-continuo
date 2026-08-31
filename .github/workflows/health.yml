@@ -1,0 +1,74 @@
+# Salud del receptor desplegado, y regresion del control de ingress.
+#
+# Ojo con la sonda: desde que el tunel filtra por ruta (ADR-0004, DS-07), /health
+# devuelve 404 en el Edge y NO sirve como senal de vida. La sonda util es
+# `POST /webhook` sin firma esperando 401, que en una sola peticion prueba tres
+# cosas encadenadas: el tunel enruta, el receptor esta vivo, y la validacion de
+# firma sigue activa.
+#
+# Un 202 aqui seria mucho peor que un 500: significaria que algo acepta webhooks
+# sin verificar la firma.
+#
+# Activacion: requiere la repo variable RECEPTOR_URL (Settings -> Variables)
+# apuntando al receptor publicado. Sin ella sale en verde con un aviso, de modo
+# que el monitoreo queda listo y se enciende con el despliegue real.
+name: Salud del artefacto
+
+on:
+  schedule:
+    - cron: "0 7 * * *" # a diario, 07:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  receptor:
+    name: el receptor responde y el borde sigue filtrando
+    runs-on: ubuntu-latest
+    steps:
+      - name: sonda de vida y de control de acceso
+        env:
+          RECEPTOR_URL: ${{ vars.RECEPTOR_URL }}
+        run: |
+          if [ -z "$RECEPTOR_URL" ]; then
+            echo "::notice::RECEPTOR_URL no esta configurada como repo variable; el chequeo queda inactivo hasta publicar el receptor (ver docs/03-implementation/deployment-runbook.md)."
+            exit 0
+          fi
+          base="${RECEPTOR_URL%/}"
+          fallos=0
+
+          # --- 1. Senal de vida: /webhook sin firma debe dar 401 ---
+          codigo=$(curl -s -o /dev/null -m 20 -w '%{http_code}' \
+            -X POST -H 'Content-Type: application/json' -d '{}' "$base/webhook" || echo "000")
+          case "$codigo" in
+            401)
+              echo "::notice::receptor vivo: /webhook responde 401 sin firma" ;;
+            202)
+              echo "::error::/webhook devolvio 202 SIN FIRMA. La validacion HMAC no esta actuando."
+              fallos=$((fallos + 1)) ;;
+            000)
+              echo "::error::sin respuesta de $base/webhook. Tunel caido o DNS roto."
+              fallos=$((fallos + 1)) ;;
+            *)
+              echo "::error::/webhook devolvio $codigo; se esperaba 401. Receptor caido o mal enrutado."
+              fallos=$((fallos + 1)) ;;
+          esac
+
+          # --- 2. Regresion del filtro de ingress (DS-07 / T13) ---
+          # Estos endpoints NO deben existir desde Internet. Que respondan algo
+          # distinto de 404 significa que la regla de ingress se amplio y la
+          # proteccion volvio a depender del tratamiento de cabeceras de proxy.
+          for ruta in status reload health openapi.json; do
+            codigo=$(curl -s -o /dev/null -m 20 -w '%{http_code}' "$base/$ruta" || echo "000")
+            if [ "$codigo" = "404" ]; then
+              echo "::notice::/$ruta correctamente inexistente desde Internet (404)"
+            else
+              echo "::error::/$ruta respondio $codigo desde Internet; deberia ser 404 en el Edge."
+              echo "::error::La regla de ingress ya no filtra por ruta. Ver T13 en docs/02-design/threat-model.md."
+              fallos=$((fallos + 1))
+            fi
+          done
+
+          [ "$fallos" -eq 0 ] || exit 1
+          echo "::notice::receptor sano y borde filtrando correctamente"

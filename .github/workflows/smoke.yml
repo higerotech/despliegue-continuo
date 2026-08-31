@@ -1,0 +1,70 @@
+# Smoke semanal contra las dependencias EXTERNAS de las que depende un despliegue.
+# No bloquea el CI: su trabajo es avisar de drift antes de que lo sufra el operador.
+#
+# El acoplamiento mas fragil del sistema esta documentado en
+# docs/02-design/interfaces-contract.md §3: `docker/metadata-action` con `type=sha`
+# produce `sha-` + 7 caracteres, y eso DEBE coincidir con el `tag_template` por
+# defecto del receptor. Si esa accion cambiara su formato, cada despliegue fallaria
+# con `manifest unknown` y el motivo no seria evidente en el log.
+name: Smoke de contratos externos
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # lunes 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contrato-de-tag:
+    name: el tag de metadata-action sigue siendo sha-<7>
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: type=sha
+
+      - name: comprobar el formato contra el tag_template del receptor
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          echo "tags producidos: $TAGS"
+          tag="${TAGS##*:}"
+          if ! printf '%s' "$tag" | grep -qE '^sha-[0-9a-f]{7}$'; then
+            echo "::error::metadata-action produjo '$tag'. El receptor espera 'sha-<7 hex>'."
+            echo "::error::Con este formato, todo despliegue fallaria con 'manifest unknown'."
+            echo "::error::Ajustar tag_template en apps.yml (ver interfaces-contract.md §3)."
+            exit 1
+          fi
+          echo "::notice::contrato intacto: $tag"
+
+  imagenes-del-escenario-e2e:
+    name: las imagenes de las pruebas e2e siguen comportandose igual
+    runs-on: ubuntu-latest
+    steps:
+      # Las pruebas de rollback dependen de que una imagen sirva HTTP y la otra
+      # muera al arrancar. Si alguna cambiara de comportamiento, las e2e fallarian
+      # por un motivo que no tiene nada que ver con nuestro codigo.
+      - name: traefik/whoami debe servir HTTP
+        run: |
+          docker run -d --name sano -p 127.0.0.1:8099:80 traefik/whoami:v1.10
+          for _ in $(seq 1 20); do
+            [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8099/)" = "200" ] && ok=1 && break
+            sleep 1
+          done
+          docker rm -f sano >/dev/null
+          [ "${ok:-0}" = "1" ] || { echo "::error::traefik/whoami:v1.10 ya no sirve HTTP en el 80"; exit 1; }
+          echo "::notice::traefik/whoami:v1.10 sirve HTTP correctamente"
+
+      - name: alpine debe terminar de inmediato
+        run: |
+          docker run --name roto alpine:3.20 >/dev/null 2>&1 || true
+          estado=$(docker inspect roto --format '{{.State.Status}}')
+          docker rm -f roto >/dev/null
+          [ "$estado" = "exited" ] || { echo "::error::alpine:3.20 no termina; el escenario 'roto' dejaria de serlo"; exit 1; }
+          echo "::notice::alpine:3.20 termina como se espera"
