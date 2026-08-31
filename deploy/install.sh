@@ -19,10 +19,33 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 
+# Los prerequisitos se comprueban TODOS aqui arriba, antes de crear usuarios,
+# contenedores o directorios: es preferible negarse a empezar que morir a
+# mitad de camino y dejar el sistema a medio instalar.
 [[ $EUID -eq 0 ]] || die "ejecutalo con sudo."
 command -v docker >/dev/null || die "Docker no esta instalado."
 docker compose version >/dev/null 2>&1 || die "falta el plugin 'docker compose'."
 command -v python3 >/dev/null || die "python3 no esta instalado."
+command -v rsync   >/dev/null || die "rsync no esta instalado (lo usa el despliegue del codigo)."
+command -v openssl >/dev/null || die "openssl no esta instalado (genera el secreto del webhook)."
+
+# python3 a secas no basta: en Debian y Ubuntu el modulo venv viaja en un
+# paquete aparte. Sin el, la instalacion moria justo al crear el entorno
+# virtual, con el receptor ya copiado y el usuario ya creado.
+# Se comprueba `import ensurepip`, NO `venv --help`: el segundo devuelve 0
+# aunque falte el paquete, porque mostrar la ayuda no necesita ensurepip. Es
+# ensurepip lo que crea pip dentro del entorno, y su ausencia es justo lo que
+# hace fracasar la creacion del venv.
+if ! python3 -c "import ensurepip" >/dev/null 2>&1; then
+    if command -v apt-get >/dev/null; then
+        log "falta ensurepip (paquete python3-venv); instalandolo"
+        apt-get update -qq
+        apt-get install -y -qq python3-venv
+        python3 -c "import ensurepip" >/dev/null 2>&1             || die "se instalo python3-venv pero ensurepip sigue sin estar disponible."
+    else
+        die "falta ensurepip. Instala el paquete python3-venv de tu distribucion."
+    fi
+fi
 
 # --- usuario de servicio -----------------------------------------------------
 # Sin shell de login y sin home propio: solo existe para correr el servicio.
@@ -45,9 +68,21 @@ install -d -o root -g root -m 0755 "$PROXY_DIR"
 install -m 0644 "$REPO_DIR/deploy/docker-socket-proxy.yml" "$PROXY_DIR/docker-compose.yml"
 docker compose -f "$PROXY_DIR/docker-compose.yml" -p cd-socket-proxy up -d
 
-# Comprobacion real: la API responde y 'exec' esta cerrado.
-if ! DOCKER_HOST=tcp://127.0.0.1:2375 docker version --format '{{.Server.Version}}' >/dev/null 2>&1; then
-    die "el socket-proxy no responde en 127.0.0.1:2375"
+# El contenedor tarda un instante en aceptar conexiones: comprobar justo
+# despues de 'up -d' daba un falso negativo. Se reintenta antes de rendirse.
+log "esperando a que el socket-proxy acepte conexiones"
+proxy_listo=0
+for _ in $(seq 1 30); do
+    if DOCKER_HOST=tcp://127.0.0.1:2375 docker version --format '{{.Server.Version}}' >/dev/null 2>&1; then
+        proxy_listo=1
+        break
+    fi
+    sleep 1
+done
+if [[ $proxy_listo -eq 0 ]]; then
+    echo "--- ultimos logs del socket-proxy ---" >&2
+    docker logs --tail 15 cd-socket-proxy 2>&1 | sed 's/^/  /' >&2
+    die "el socket-proxy no responde en 127.0.0.1:2375 tras 30s"
 fi
 log "socket-proxy operativo"
 
@@ -66,7 +101,12 @@ rsync -a --delete \
 chown -R "$SERVICE_USER:$SERVICE_USER" "$APP_DIR"
 
 log "instalando dependencias en el entorno virtual"
-if [[ ! -x "$APP_DIR/.venv/bin/python" ]]; then
+# Se comprueba pip, no python: un venv creado sin ensurepip tiene el interprete
+# pero no pip, y mirar solo python daba por bueno un entorno inservible. Si
+# esta incompleto se rehace, que es barato y deja el estado limpio.
+if [[ ! -x "$APP_DIR/.venv/bin/pip" ]]; then
+    [[ -e "$APP_DIR/.venv" ]] && log "el entorno virtual estaba incompleto; se rehace"
+    rm -rf "$APP_DIR/.venv"
     sudo -u "$SERVICE_USER" python3 -m venv "$APP_DIR/.venv"
 fi
 sudo -u "$SERVICE_USER" "$APP_DIR/.venv/bin/pip" install --quiet --upgrade pip

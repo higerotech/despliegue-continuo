@@ -18,7 +18,13 @@ services:
     image: tecnativa/docker-socket-proxy:0.3.0
     container_name: cd-socket-proxy
     restart: unless-stopped
-    read_only: true
+    # NO poner `read_only: true`: el entrypoint de esta imagen genera su
+    # /usr/local/etc/haproxy/haproxy.cfg a partir de un .template que vive en
+    # ESE MISMO directorio, asi que con la raiz de solo lectura entra en bucle
+    # de reinicio ("can't create haproxy.cfg: Read-only file system") y un
+    # tmpfs encima ocultaria la plantilla. El endurecimiento real de este
+    # contenedor esta en otra parte: socket montado :ro, puerto solo en
+    # loopback, sin privilegios nuevos y superficie de API recortada.
     security_opt:
       - no-new-privileges:true
     volumes:
