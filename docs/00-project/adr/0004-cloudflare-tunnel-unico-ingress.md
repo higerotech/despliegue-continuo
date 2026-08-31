@@ -4,7 +4,7 @@
 * **Fecha:** 2026-08-30
 * **Decisores:** Jeremi Alcala
 * **Fase AI-DLC:** 02-design
-* **Versión:** 1.1.0
+* **Versión:** 1.2.0
 * **ID:** ADR-0004
 * **Supersede / Superseded-by:** —
 * **Controles OWASP afectados:** A01 (control de acceso), A04 (fallos criptográficos / TLS), A02 (configuración de seguridad)
@@ -64,18 +64,16 @@ repositorio es público (ver `data-classification.md`).
   GitHub en el host no sirve de nada** — el origen siempre es Cloudflare. Si se quisiera ese
   filtro, va en una regla WAF del borde con las redes de `api.github.com/meta` (campo `hooks`).
 
-## Estado real del despliegue (2026-08-31)
+## Estado real del despliegue
 
-El túnel montado en `hgtech001` **no aplica el filtro por ruta** que esta ADR especifica:
-publica `deploy.higerotech.com` contra `http://localhost:9000` completo. Se gestiona por token
-desde el dashboard de Cloudflare, no con el `config.yml` de `ingress/cloudflared-config.yml`.
+**Conforme desde el 2026-08-31.** El túnel de `hgtech001` enruta únicamente `^/webhook$` hacia
+el receptor; el resto muere con `404` en el Edge. Se gestiona por token desde el dashboard de
+Cloudflare, no con el `config.yml` de `ingress/cloudflared-config.yml`, así que la regla vive
+allí y no en este repositorio.
 
-La decisión de esta ADR **no cambia**: el filtro por ruta sigue siendo lo correcto y es la
-corrección pendiente. Lo que cambia es que el estado real no la cumple, y eso está registrado
-como deuda **DS-07** con su amenaza asociada **T13** en
-[`threat-model.md`](../../02-design/threat-model.md).
-
-Comprobado que hoy `/status` y `/reload` responden `403` desde Internet, pero por una cadena de
-comportamientos que no diseñamos —el reescrito de `request.client` que hace uvicorn con
-`--proxy-headers` y la normalización de `X-Forwarded-For` que hace Cloudflare—. Esa dependencia
-es precisamente lo que el filtro por ruta elimina.
+Durante unas horas el túnel publicó el puerto completo. En ese intervalo `/status` y `/reload`
+respondieron `403`, pero por una cadena de comportamientos que no diseñamos —el reescrito de
+`request.client` que hace uvicorn con `--proxy-headers` y la normalización de
+`X-Forwarded-For` que hace Cloudflare—. Esa dependencia es justo lo que el filtro por ruta
+elimina, y quedó documentada como **T13** en
+[`threat-model.md`](../../02-design/threat-model.md) porque el modo de fallo era silencioso.

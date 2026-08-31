@@ -4,7 +4,7 @@
 * **Fecha:** 2026-08-31
 * **Decisores:** Jeremi Alcala
 * **Fase AI-DLC:** 02-design
-* **Versión:** 0.5.1
+* **Versión:** 0.5.2
 * **Gate:** 1
 * **Alcance:** receptor + ingress por túnel + socket-proxy + cadena de suministro de imágenes + estado en disco
 * **Metodología:** STRIDE + DREAD
@@ -87,8 +87,8 @@ Cada dimensión de 1 a 5; puntuación = media. **≥ 4,0 crítica · 3,0–3,9 a
 | **T2** | Inyección por payload | 5 | 1 | 1 | 4 | 3 | **2,8** | Media | ADR-0007: `create_subprocess_exec` sin shell; ninguna ruta sale del payload |
 | **T5** | Despliegue de repo no declarado | 3 | 2 | 1 | 3 | 4 | **2,6** | Media | ADR-0007: el inventario es la allowlist; emparejamiento en 4 dimensiones |
 | **T9** | Despliegues solapados | 2 | 3 | 2 | 3 | 3 | **2,6** | Media | ADR-0008: un worker por app; escritura atómica del estado |
-| **T7** | Exposición de `/status` y `/reload` | 3 | 2 | 1 | 2 | 4 | **2,4** | Media | Guardia loopback/token en `main._authorized`. **El filtro por ruta en el borde está diseñado (ADR-0004) pero NO aplicado en el despliegue actual** — ver DS-07 |
-| **T13** | Los endpoints de administración quedan expuestos al cambiar el tratamiento de cabeceras de proxy | 3 | 2 | 2 | 3 | 4 | **2,8** | Media | Ninguno propio: hoy dependen de dos comportamientos ajenos. Ver la sección dedicada |
+| **T7** | Exposición de `/status` y `/reload` | 3 | 1 | 1 | 2 | 2 | **1,8** | Baja | **Dos capas independientes**: el borde solo enruta `^/webhook$` (verificado: `404` en el Edge) y el guardia loopback/token de `main._authorized` |
+| **T13** | Los endpoints de administración quedan expuestos al cambiar el tratamiento de cabeceras de proxy | 3 | 1 | 1 | 3 | 2 | **2,0** | Media-baja | **Filtro por ruta aplicado en el borde** (2026-08-31): los endpoints ya no existen desde Internet, así que la cadena de cabeceras dejó de ser lo que sostiene la propiedad. Ver la sección dedicada |
 | **T12** | Agotamiento de recursos | 2 | 4 | 3 | 2 | 1 | **2,4** | Media | Límite de 1 MiB antes de parsear; `command_timeout`; cola acotada |
 | **T11** | Replay de una entrega | 2 | 3 | 2 | 2 | 2 | **2,2** | Media | Caché LRU de 1024 `X-GitHub-Delivery`; además el redespliegue es idempotente |
 | **T3** | Ataque directo a puertos | 4 | 1 | 1 | 4 | 1 | **2,2** | Media | ADR-0004: nada escucha en interfaz pública; `BIND_HOST=127.0.0.1` probado |
@@ -110,8 +110,8 @@ quadrantChart
     "T2 inyeccion por payload": [0.06, 0.85]
     "T5 repo no declarado": [0.10, 0.58]
     "T9 despliegues solapados": [0.12, 0.35]
-    "T7 exposicion de admin": [0.09, 0.45]
-    "T13 cabeceras de proxy": [0.18, 0.50]
+    "T7 exposicion de admin": [0.04, 0.45]
+    "T13 cabeceras de proxy": [0.06, 0.50]
     "T12 agotamiento": [0.25, 0.28]
     "T11 replay": [0.15, 0.20]
     "T3 ataque a puertos": [0.05, 0.72]
@@ -217,9 +217,29 @@ Por orden de solidez:
    `OR`, y la vía de loopback seguiría abierta— pero da acceso legítimo desde fuera sin
    depender de la IP.
 
-Mientras 1 y 2 no estén, esta amenaza queda **aceptada con condición de revisión**: cualquier
-cambio en el ingress, en el proxy o en los parámetros de arranque de uvicorn obliga a repetir
-las pruebas de la tabla de arriba.
+### Estado: cerrada por el borde (2026-08-31)
+
+Se aplicó la opción **1**: la regla de ingress del túnel enruta únicamente `^/webhook$` hacia el
+receptor. Verificado contra el despliegue real:
+
+| Ruta desde Internet | Antes | Ahora |
+|---|---|---|
+| `/status` | `403` (por la cadena de cabeceras) | **`404` en el Edge** |
+| `/reload` | `403` (por la cadena de cabeceras) | **`404` en el Edge** |
+| `/health` | `200` | **`404` en el Edge** |
+| `/` y `/openapi.json` | `404` de la aplicación | **`404` en el Edge** |
+| `/webhook` | `401 firma invalida` | **`401 firma invalida`** (sigue llegando) |
+
+La diferencia de fondo: los endpoints de administración **ya no existen desde fuera**, en lugar
+de existir y ser rechazados. La cadena uvicorn + Cloudflare sigue ahí y sigue funcionando, pero
+ha dejado de ser lo que sostiene la propiedad: ahora es una segunda capa, que es el papel que
+ADR-0004 le asignaba desde el principio.
+
+**Condición de revisión, que sigue vigente:** cualquier cambio en la regla de ingress, en el
+proxy delante del receptor o en los parámetros de arranque de uvicorn obliga a repetir las
+pruebas de las dos tablas de esta sección. La opción **2** —guardia explícito que exija
+`STATUS_TOKEN` ante cabeceras de reenvío— queda como refuerzo pendiente y protegería aunque el
+borde se configurase mal en el futuro.
 
 ## Controles verificados
 
@@ -248,4 +268,5 @@ las pruebas de la tabla de arriba.
 | **DS-04** | Sin procedimiento probado de rotación del secreto | T10 tarda más en cerrarse tras una sospecha | Runbook, Gate 4 |
 | ~~**DS-05**~~ | ~~Sin SBOM ni escaneo de dependencias~~ | — | **Cerrada**: `pip-audit` y SBOM CycloneDX en CI (job `sca`) |
 | **DS-06** | `health_url` es opcional | Sin ella no hay verificación real ni rollback fiable | Decisión pendiente: hacerla obligatoria en `load_apps` |
-| **DS-07** | **El túnel publica el puerto entero, no solo `^/webhook$`** | T13: los endpoints de administración dependen de comportamientos ajenos para no quedar expuestos | Editar la regla de ingress en el dashboard de Cloudflare (el túnel se gestiona por token, no por `config.yml`) |
+| ~~**DS-07**~~ | ~~El túnel publica el puerto entero~~ | — | **Cerrada 2026-08-31**: regla de ingress limitada a `^/webhook$`; verificado `404` en el Edge para el resto |
+| **DS-08** | El guardia de administración se fía de la IP resultante, no de si la petición vino por un proxy | Si el borde se configurase mal, la protección volvería a depender de la cadena de cabeceras | Exigir `STATUS_TOKEN` cuando la petición traiga cabeceras de reenvío (opción 2 de T13) |
