@@ -4,10 +4,10 @@
 * **Fecha:** 2026-08-30
 * **Decisores:** Jeremi Alcala
 * **Fase AI-DLC:** 04-testing
-* **Versión:** 0.4.0
+* **Versión:** 0.4.1
 * **Gate:** 3
-* **Alcance:** receptor (`receiver/`) y verificación manual de la superficie del socket-proxy
-* **Estado de la suite:** **52 pruebas, todas en verde** (`pytest -q`, 0,5 s)
+* **Alcance:** receptor (`receiver/`), ciclo de despliegue contra Docker real y verificación manual de la superficie del socket-proxy
+* **Estado de la suite:** **59 pruebas, todas en verde** — 53 rápidas (0,8 s) + 6 de extremo a extremo contra Docker (2 min 20 s)
 
 ## Principio
 
@@ -15,9 +15,9 @@ El sistema tiene **un punto cuya corrección sostiene todo lo demás**: la verif
 firma. Si falla, ningún otro control importa. Por eso la suite no busca cobertura uniforme,
 sino **densidad donde el fallo es catastrófico** y confianza razonable en el resto.
 
-Consecuencia visible: `security.py` son 70 líneas y tiene 14 pruebas; `deployer.py` son 220
-líneas y no tiene ninguna automática. No es un descuido, es la deuda **D-01**, y está razonada
-más abajo.
+El segundo punto crítico no es de seguridad sino de disponibilidad: **el rollback**. Es lo que
+convierte una build rota en un incidente menor en vez de un servicio caído. Durante un tiempo
+fue la deuda D-01, verificado solo a mano; ahora tiene pruebas contra Docker real.
 
 ## Reparto actual
 
@@ -25,11 +25,36 @@ más abajo.
 |---|---|---|---|
 | `test_security.py` | 14 | Firma HMAC y deduplicación de entregas | Unitario |
 | `test_events.py` | 15 | Traducción de payloads a intención de despliegue | Unitario |
-| `test_config.py` | 14 | Arranque seguro y validación del inventario | Unitario |
+| `test_config.py` | 15 | Arranque seguro y validación del inventario | Unitario |
 | `test_webhook.py` | 9 | Endpoint completo con el despliegue sustituido | Integración |
-| **Total** | **52** | | |
+| `test_rollback_e2e.py` | 6 | Ciclo real: `pull`, `up -d`, healthcheck y rollback | **Extremo a extremo** |
+| **Total** | **59** | | |
 
-Código: 812 líneas en `app/`, 368 en `tests/`. Ratio de prueba ≈ 0,45:1.
+Las de extremo a extremo llevan el marcador `docker` y **se saltan solas** si no hay un daemon
+en marcha, de modo que `pytest` sigue siendo útil en una máquina sin Docker:
+
+```bash
+pytest                    # todo (necesita Docker para las 6 e2e)
+pytest -m "not docker"    # solo las 53 rápidas
+pytest -m docker          # solo el ciclo real
+```
+
+## Cómo se prueba el rollback de verdad
+
+El obstáculo no era escribir la aserción, sino construir un despliegue que **arranque y falle el
+healthcheck**, con una imagen parametrizada únicamente por el tag. La solución son dos tags
+locales sobre un mismo repositorio de imagen:
+
+| Tag | Imagen real | Comportamiento |
+|---|---|---|
+| `sha-sano` | `traefik/whoami:v1.10` | Sirve HTTP en el puerto 80 |
+| `sha-sano2` | `traefik/whoami:v1.10` | Igual; sirve para encadenar dos despliegues buenos |
+| `sha-roto` | `alpine:3.20` | Arranca y termina de inmediato: nadie responde |
+
+Se crean con `docker tag` desde imágenes públicas, y el compose de la prueba lleva
+`pull_policy: never` para que `docker compose pull` no vaya al registro a por un repositorio
+que solo existe en local. Cada prueba usa su propio proyecto compose y un puerto libre, y
+derriba lo suyo al terminar.
 
 ## Qué verifica cada requisito
 
@@ -69,7 +94,7 @@ requirementDiagram
       id: RF05
       text: Rollback automatico al fallar el healthcheck
       risk: medium
-      verifymethod: demonstration
+      verifymethod: test
     }
     requirement RNF01 {
       id: RNF01
@@ -90,14 +115,14 @@ requirementDiagram
     element TestWebhook {
       type: "prueba"
     }
+    element TestRollbackE2E {
+      type: "prueba"
+    }
     element PruebaManualProxy {
       type: "prueba"
     }
     element RevisionGitLsFiles {
       type: "inspeccion"
-    }
-    element PendienteRollback {
-      type: "deuda"
     }
 
     TestSecurity - verifies -> RS01
@@ -107,13 +132,13 @@ requirementDiagram
     TestEvents - verifies -> RF02
     TestWebhook - verifies -> RF02
     TestConfig - verifies -> RNF01
+    TestRollbackE2E - verifies -> RF05
     PruebaManualProxy - verifies -> RS04
     RevisionGitLsFiles - verifies -> RS05
-    PendienteRollback - verifies -> RF05
 ```
 
-*Eje trazabilidad — fase 04-testing. `PendienteRollback` es deuda declarada, no una prueba
-existente: RF05 hoy solo está verificado a mano.*
+*Eje trazabilidad — fase 04-testing. RS04 es el único que se apoya en demostración manual, y por
+un motivo de fondo: comprobar que `exec` está bloqueado exige un daemon con el proxy delante.*
 
 ## Cobertura de las transiciones de estado
 
@@ -127,10 +152,28 @@ Contrastado con el `stateDiagram-v2` de `docs/02-design/architecture.md`:
 | Recibido → Ignorado (build fallida) | `test_events.py::test_no_despliega_si_el_workflow_no_tuvo_exito` (4 casos) | Automático |
 | Recibido → Ignorado (ping, tags, borrado de rama) | `test_events.py` (7 casos) | Automático |
 | Recibido → Encolado | `test_webhook.py::test_encola_el_despliegue_cuando_todo_encaja` | Automático |
-| Encolado → Desplegando → Fallido | Humo con GHCR real: `pull` denegado, error capturado y registrado | Manual |
-| Desplegando → Verificando → Vivo | Verificado a través del socket-proxy con `traefik/whoami`: `HTTP 200` | Manual |
-| Verificando → Fallido → Revirtiendo → Revertido | **No verificado de extremo a extremo** — deuda **D-01** | Pendiente |
-| Fallido → Detenido (sin tag anterior) | Humo: primer despliegue fallido, `rolled_back: false` | Manual |
+| Desplegando → Verificando → **Vivo** | `test_rollback_e2e.py::test_el_despliegue_sano_deja_el_servicio_respondiendo` | **Automático** |
+| Verificando → Fallido → **Revirtiendo → Revertido** | `test_rollback_e2e.py::test_el_rollback_restaura_la_version_anterior` | **Automático** |
+| Fallido → **Detenido** (sin tag anterior) | `test_rollback_e2e.py::test_sin_version_anterior_no_hay_rollback` | **Automático** |
+| Encolado → Desplegando → Fallido (error de `pull`) | Humo con GHCR real: `pull` denegado, error capturado y registrado | Manual |
+
+Solo queda una transición sin automatizar, y es la menos interesante: el fallo de `pull` ya está
+cubierto indirectamente por el mismo camino de error.
+
+## La prueba tiene dientes
+
+Una prueba que pasa solo vale si **falla cuando el código se rompe**. Se comprobó con una
+mutación dirigida al camino crítico: desactivar la condición de rollback en `deployer.deploy`.
+
+| Mutación | Resultado |
+|---|---|
+| `if False and app.rollback and ...` | **2 pruebas fallan**: `test_el_rollback_restaura_la_version_anterior` y `test_el_fallo_queda_registrado_en_el_jsonl` |
+
+`test_el_estado_en_disco_no_avanza_al_tag_roto` siguió pasando, y es correcto: comprueba una
+propiedad distinta —que un despliegue fallido nunca se persista como versión viva— que no
+depende de que el rollback ocurra.
+
+No es mutation testing sistemático (deuda D-06), pero cubre el punto que importa.
 
 ## Verificaciones manuales ejecutadas
 
@@ -156,32 +199,43 @@ Registradas aquí porque respaldan requisitos que ninguna prueba automática cub
 | Firma válida | `202 queued`, `tag sha-1a2b3c4` | ✅ |
 | Reentrega | `202 ignored: ya procesado` | ✅ |
 | `POST /reload` | `{"status":"reloaded"}` | ✅ |
-| Despliegue con imagen inexistente | Error capturado y escrito en el `.jsonl` | ✅ |
 
 ## Deuda de pruebas
 
 | ID | Deuda | Riesgo | Cómo se cerraría |
 |---|---|---|---|
-| **D-01** | **RF05 (rollback) sin prueba automática de extremo a extremo** | Es el control que evita que una build rota deje el servicio caído, y solo está probado a mano. Un fallo aquí solo se descubre durante un incidente | Prueba de integración con Docker: desplegar una imagen sana, luego una que no arranca, y afirmar que el contenedor vuelve al tag anterior. Requiere Docker en CI |
-| **D-02** | `deployer.py` sin pruebas unitarias | Healthcheck, timeouts y escritura de estado sin red de seguridad | Sustituir `_run` por un doble y probar las ramas de `deploy()` sin Docker |
-| **D-03** | Sin prueba de carga ni de concurrencia | La serialización por app está razonada pero no demostrada | Encolar N trabajos de la misma app y verificar el orden |
+| ~~**D-01**~~ | ~~RF05 sin prueba e2e~~ | — | **Cerrada** por `test_rollback_e2e.py`, verificada por mutación |
+| **D-02** | `deployer.py` sin pruebas unitarias | Las e2e cubren el camino feliz y el rollback, pero no los bordes: timeouts, `health_url` ausente, estado corrupto | Sustituir `_run` por un doble y probar las ramas sin Docker |
+| **D-03** | Sin prueba de concurrencia | La serialización por app está razonada pero no demostrada | Encolar N trabajos de la misma app y verificar el orden |
 | **D-04** | Sin escaneo de dependencias ni SBOM | Cadena de suministro sin verificar (A03, DS-05) | `pip-audit` en el workflow `ci` |
 | **D-05** | Cobertura no medida | No se sabe qué ramas quedan sin ejecutar | `pytest --cov` con umbral en CI |
+| **D-06** | Mutation testing no sistemático | Solo se mutó el camino del rollback, a mano | `mutmut` sobre `app/`, objetivo ≥ 60 % |
 
-**D-01 es la que importa.** Las demás son higiene; esa protege el requisito que convierte un
-despliegue fallido en un incidente menor en vez de una caída.
+## Riesgo conocido de las pruebas e2e
+
+Descargan `traefik/whoami` y `alpine` de Docker Hub, cuyo plan gratuito limita a **10 `pull` por
+hora sin autenticar**. Los runners de GitHub Actions comparten direcciones IP, así que un pico
+de actividad ajena podría hacer fallar el job `test-e2e` con un `429` que no tiene nada que ver
+con nuestro código.
+
+No se ha mitigado a propósito: hacerlo exigiría replicar las imágenes a GHCR o autenticar contra
+Docker Hub, y ambas cosas cuestan más de lo que hoy vale el problema. **Si el job empieza a
+fallar de forma intermitente, esta es la primera causa a descartar**, no un fallo real.
 
 ## Ejecución
 
 ```bash
 cd receiver
 python -m venv .venv && ./.venv/bin/pip install -r requirements-dev.txt
-./.venv/bin/pytest -q
+./.venv/bin/pytest -q                  # todo
+./.venv/bin/pytest -q -m "not docker"  # solo las rápidas
 ```
 
-En CI: `.github/workflows/ci.yml` corre la suite en cada push y pull request sobre Python 3.12.
+En CI (`.github/workflows/ci.yml`) van en **dos jobs separados**: `test` da señal en segundos y
+`test-e2e` ejecuta el ciclo contra Docker. La separación evita que un fallo trivial tarde tres
+minutos en aparecer.
 
-## Prueba manual de extremo a extremo
+## Prueba manual de extremo a extremo del webhook
 
 Para validar la cadena completa sin esperar a un push real, firmando como lo haría GitHub:
 

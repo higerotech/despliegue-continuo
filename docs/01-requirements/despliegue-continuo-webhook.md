@@ -82,7 +82,7 @@ correcto que ocurra, pero significa que algo salió mal.*
 | **RF02** | El sistema **no** despliega si la build falló, si la rama no es la desplegable o si el workflow no es el declarado | `test_events.py::test_no_despliega_si_el_workflow_no_tuvo_exito`, `test_webhook.py::test_ignora_lo_que_no_esta_declarado` |
 | **RF03** | El despliegue usa un tag inmutable derivado del SHA del commit, nunca una etiqueta móvil | `test_config.py::test_calcula_el_tag_desde_el_sha` |
 | **RF04** | Solo se despliegan aplicaciones declaradas en el inventario | `test_webhook.py::test_ignora_lo_que_no_esta_declarado` |
-| **RF05** | Si el servicio desplegado no supera el healthcheck, el sistema restaura automáticamente el tag anterior | Verificación manual en Gate 3 (ver `docs/04-testing/test-strategy.md`, deuda D-01) |
+| **RF05** | Si el servicio desplegado no supera el healthcheck, el sistema restaura automáticamente el tag anterior | `test_rollback_e2e.py::test_el_rollback_restaura_la_version_anterior` (contra Docker real) |
 | **RF06** | Cuando un evento legítimo no dispara despliegue, la respuesta indica el motivo concreto | `test_webhook.py::test_ignora_lo_que_no_esta_declarado` (verifica el cuerpo) |
 | **RF07** | El inventario se recarga sin reiniciar el servicio ni interrumpir despliegues en curso | Verificado en humo: `POST /reload` → `{"status":"reloaded"}` |
 | **RF08** | El operador puede consultar qué versión corre, qué hay en cola y el histórico reciente | Verificado en humo: `GET /status` |
@@ -139,7 +139,7 @@ requirementDiagram
       id: RF05
       text: Se revierte al tag anterior si falla el healthcheck
       risk: medium
-      verifymethod: demonstration
+      verifymethod: test
     }
 
     element VerificadorFirma {
@@ -166,6 +166,9 @@ requirementDiagram
     element PruebaProxy {
       type: "prueba"
     }
+    element TestRollbackE2E {
+      type: "prueba"
+    }
 
     VerificadorFirma - satisfies -> RS01
     CacheEntregas - satisfies -> RS02
@@ -176,10 +179,12 @@ requirementDiagram
     TestSeguridad - verifies -> RS02
     TestWebhook - verifies -> RF02
     PruebaProxy - verifies -> RS04
+    TestRollbackE2E - verifies -> RF05
 ```
 
-*Eje trazabilidad — fase 01-requirements. RF05 aparece sin prueba automática: es la deuda D-01
-del Gate 3.*
+*Eje trazabilidad — fase 01-requirements. Los seis requisitos de la traza tienen verificación
+automática desde que se cerró la deuda D-01; RS04 sigue apoyándose además en una comprobación
+manual sobre el socket-proxy.*
 
 ## Escenarios de abuso
 
