@@ -1,0 +1,58 @@
+# Plantilla para el repositorio de CADA aplicacion desplegable.
+# Copiar a .github/workflows/build-and-push.yml en el repo de la app.
+#
+# El nombre del workflow ('build') debe coincidir con el campo `workflow` de
+# la entrada correspondiente en apps.yml: el receptor lo usa para no desplegar
+# cuando termina con exito un workflow distinto (por ejemplo, el de tests).
+
+name: build
+
+on:
+  push:
+    branches: [main]
+
+# Sin esto, GITHUB_TOKEN no puede publicar en GHCR.
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository }}
+          # 'type=sha' produce sha-<7 primeros caracteres>: exactamente el
+          # tag_template por defecto del receptor.
+          tags: |
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+# El despliegue NO se dispara desde aqui. Al completarse este workflow, GitHub
+# emite el evento workflow_run al webhook del servidor, que valida la firma,
+# comprueba rama y conclusion, y despliega el tag sha-xxxxxxx.

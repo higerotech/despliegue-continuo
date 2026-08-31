@@ -1,0 +1,42 @@
+# /etc/systemd/system/cd-receiver.service
+#
+# El receptor corre como usuario dedicado 'deploy'. NO pertenece al grupo
+# docker: habla con la API a traves del socket-proxy en 127.0.0.1:2375,
+# que expone una superficie recortada (ADR-0005).
+
+[Unit]
+Description=Receptor de webhooks de GitHub para despliegue continuo
+Documentation=https://github.com/jeremialcala/despliegue-continuo
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=exec
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/cd-receiver
+EnvironmentFile=/etc/cd-receiver/receiver.env
+Environment=DOCKER_HOST=tcp://127.0.0.1:2375
+ExecStart=/opt/cd-receiver/.venv/bin/uvicorn app.main:app --host ${BIND_HOST} --port ${BIND_PORT} --no-access-log
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=60s
+KillSignal=SIGTERM
+
+# Endurecimiento: el proceso ve lo justo del sistema de ficheros.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+ReadWritePaths=/var/lib/cd-receiver /var/log/cd-receiver /srv/apps
+
+[Install]
+WantedBy=multi-user.target

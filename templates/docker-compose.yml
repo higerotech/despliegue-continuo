@@ -1,0 +1,25 @@
+# Plantilla del compose que vive en el servidor, en project_dir.
+#
+# La clave es que la imagen NUNCA sea 'latest': el receptor inyecta IMAGE_TAG
+# con el sha exacto del commit, y por eso el rollback es simplemente volver a
+# levantar con el tag anterior.
+
+services:
+  api:
+    image: ghcr.io/higerotech/mi-api:${IMAGE_TAG:?IMAGE_TAG es obligatorio}
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

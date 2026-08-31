@@ -1,0 +1,24 @@
+# /etc/cloudflared/config.yml
+#
+# El tunel abre una conexion SALIENTE hacia Cloudflare: no se abre ningun
+# puerto en el router ni hace falta IP fija. Cloudflare termina el TLS y
+# entrega la peticion al receptor, que solo escucha en 127.0.0.1.
+#
+#   cloudflared tunnel login
+#   cloudflared tunnel create cd-receiver
+#   cloudflared tunnel route dns cd-receiver deploy.tudominio.com
+#   sudo cloudflared service install
+
+tunnel: cd-receiver
+credentials-file: /etc/cloudflared/cd-receiver.json
+
+ingress:
+  - hostname: deploy.tudominio.com
+    path: ^/webhook$          # nada mas queda publicado: ni /status ni /reload
+    service: http://127.0.0.1:9000
+    originRequest:
+      connectTimeout: 10s
+      noTLSVerify: false
+
+  # Todo lo demas se rechaza en el borde, antes de llegar al servidor.
+  - service: http_status:404
