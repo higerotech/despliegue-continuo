@@ -1,0 +1,23 @@
+# Entrada de inventario del canario. Copiar dentro de la lista `apps:` de
+# /etc/cd-receiver/apps.yml en la primera instalacion.
+#
+# El disparador es el propio repositorio del receptor: cada vez que su workflow
+# `ci` termina con exito en main, el canario se redespliega. Eso convierte cada
+# push a este repo en una prueba de que la tuberia sigue viva en el servidor.
+#
+# `tag_template` es un literal, no una plantilla: el canario siempre levanta la
+# misma imagen publica. No se busca probar una version nueva, sino que el
+# camino completo funciona.
+
+apps:
+  - name: canario
+    repo: higerotech/despliegue-continuo
+    branch: main
+    event: workflow_run
+    workflow: ci
+    project_dir: /srv/apps/canario
+    image: traefik/whoami
+    tag_template: "v1.10"
+    health_url: http://127.0.0.1:8090/
+    health_timeout: 60
+    rollback: true

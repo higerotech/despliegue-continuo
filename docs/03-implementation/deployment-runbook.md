@@ -35,6 +35,44 @@ sudoedit /etc/cd-receiver/apps.yml          # declara tus aplicaciones
 curl -X POST http://127.0.0.1:9000/reload   # sin reiniciar el servicio
 ```
 
+## Primera instalación: valida con el canario antes que con una app real
+
+En una instalación nueva hay dos cosas que pueden fallar y se confunden con
+facilidad: **la tubería** (firma, emparejado, cola, acceso a Docker, túnel) y
+**la aplicación** (imagen, variables, dependencias). Empezar por una app real
+mezcla ambas y convierte el primer día en una caza de fantasmas.
+
+El **canario** las separa. Es una app desplegable cuyo disparador es el propio
+repositorio del receptor y cuya imagen es pública y de tag fijo
+(`traefik/whoami:v1.10`), así que **solo puede fallar por la tubería**.
+
+```bash
+# 1. Colocar el compose del canario
+sudo install -d -o root -g root -m 0755 /srv/apps/canario
+sudo install -m 0644 deploy/canary/docker-compose.yml /srv/apps/canario/
+
+# 2. Añadir su entrada al inventario (ver config/apps.canary.yml) y recargar
+sudoedit /etc/cd-receiver/apps.yml
+curl -X POST http://127.0.0.1:9000/reload
+
+# 3. Registrar el webhook en higerotech/despliegue-continuo, evento Workflow runs
+
+# 4. Disparar: cualquier push a main del repo del receptor lo redespliega.
+#    O forzarlo a mano firmando la petición (ver docs/04-testing/test-strategy.md).
+
+# 5. Comprobar
+curl -s http://127.0.0.1:8090/ | head -3        # la app canario responde
+curl -s http://127.0.0.1:9000/status | jq '.apps.canario'
+```
+
+Si el canario despliega, **la tubería completa está probada en ese servidor**:
+firma válida, emparejado contra el inventario, cola, acceso a Docker por el
+socket-proxy, healthcheck y persistencia del estado. A partir de ahí, cualquier
+fallo con una app real es de la app, no del sistema.
+
+Efecto secundario útil: como el disparador es el `ci` del propio receptor, cada
+push a este repositorio vuelve a probar que la tubería sigue viva en el servidor.
+
 ## Alta de una aplicación nueva
 
 1. **En el servidor**, crear `/srv/apps/<app>/docker-compose.yml` a partir de

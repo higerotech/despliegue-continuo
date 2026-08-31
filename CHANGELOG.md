@@ -25,6 +25,17 @@ Gate 3 → `0.4.0`, Gate 4 → `0.5.0`, Gate 5 → `1.0.0`.
 
 ## [Unreleased]
 
+### Añadido
+
+- **Aplicación canario** (`deploy/canary/docker-compose.yml` + `config/apps.canary.yml`) para
+  validar una instalación nueva. Su disparador es el propio repositorio del receptor y su
+  imagen es pública con tag fijo, de modo que **solo puede fallar por la tubería**, nunca por
+  el código de una aplicación. Separa "el CD está roto" de "mi app está rota", que es lo que
+  más cuesta distinguir el primer día.
+  Verificado en local con el `Deployer` real: despliegue y healthcheck `200` en 2,6 s.
+- Sección de primera instalación en el runbook, con el canario como paso previo a dar de alta
+  cualquier app real.
+
 **Para cerrar el Gate 3, que sigue abierto:**
 
 - Matriz OWASP ejecutada de forma sistemática.

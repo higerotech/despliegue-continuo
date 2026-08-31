@@ -1,0 +1,21 @@
+# Aplicacion canario: valida la tuberia completa sin depender de ninguna build.
+#
+# Se despliega en /srv/apps/canario/ del servidor. La imagen es publica y de
+# tag fijo, asi que un despliegue del canario solo puede fallar por la tuberia
+# (firma, emparejado, cola, acceso a Docker, healthcheck), nunca por el codigo
+# de una aplicacion. Es la diferencia entre "el CD esta roto" y "mi app esta
+# rota", que es justo lo que cuesta distinguir el primer dia.
+
+services:
+  canario:
+    image: traefik/whoami:${IMAGE_TAG:?IMAGE_TAG es obligatorio}
+    container_name: canario
+    restart: unless-stopped
+    ports:
+      # Solo loopback: el canario no tiene por que ser alcanzable desde fuera.
+      - "127.0.0.1:8090:80"
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
