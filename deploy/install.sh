@@ -32,14 +32,18 @@ command -v openssl >/dev/null || die "openssl no esta instalado (genera el secre
 # python3 a secas no basta: en Debian y Ubuntu el modulo venv viaja en un
 # paquete aparte. Sin el, la instalacion moria justo al crear el entorno
 # virtual, con el receptor ya copiado y el usuario ya creado.
-if ! python3 -m venv --help >/dev/null 2>&1; then
+# Se comprueba `import ensurepip`, NO `venv --help`: el segundo devuelve 0
+# aunque falte el paquete, porque mostrar la ayuda no necesita ensurepip. Es
+# ensurepip lo que crea pip dentro del entorno, y su ausencia es justo lo que
+# hace fracasar la creacion del venv.
+if ! python3 -c "import ensurepip" >/dev/null 2>&1; then
     if command -v apt-get >/dev/null; then
-        log "falta el modulo venv de python3; instalando python3-venv"
+        log "falta ensurepip (paquete python3-venv); instalandolo"
         apt-get update -qq
         apt-get install -y -qq python3-venv
-        python3 -m venv --help >/dev/null 2>&1             || die "python3-venv se instalo pero el modulo sigue sin estar disponible."
+        python3 -c "import ensurepip" >/dev/null 2>&1             || die "se instalo python3-venv pero ensurepip sigue sin estar disponible."
     else
-        die "falta el modulo venv de python3. Instala el paquete python3-venv de tu distribucion."
+        die "falta ensurepip. Instala el paquete python3-venv de tu distribucion."
     fi
 fi
 
