@@ -1,37 +1,49 @@
 # Gate 2 — Implementación (cierre de Fase 03)
 
-**Estado: NO SUPERADO — 2026-08-30** · Fase 03 documentada; el gate queda **abierto**.
+**Estado: 4 de 5 criterios cumplidos — 2026-08-30** · Pendiente **solo la revisión humana**.
 
-La documentación de la fase 03 está completa (`deployment-runbook.md`, `repo-history.md`), pero
-**tres de los cinco criterios exigen herramientas que aún no se han ejecutado**. Marcar este
-gate como superado sería falsear el control.
+Los cuatro criterios automatizables están en verde y verificados en CI. El quinto es una acción
+que este proceso no puede firmarse a sí mismo: **la mitad humana del dual review**.
 
-- [ ] **SAST sin findings críticos/altos**
-      → **No ejecutado.** No hay análisis estático en el workflow `ci`.
-        *Para cerrarlo:* añadir `bandit` (o `ruff` con reglas de seguridad) a `ci.yml`.
-- [ ] **Dependencias verificadas (SCA) — sin deps alucinadas ni vulnerables (A03)**
-      → **No ejecutado.** Las 4 dependencias directas están fijadas a versiones publicadas y
-        verificadas contra PyPI (`pip index versions`), pero no hay escaneo de CVE ni SBOM.
-        Corresponde a las deudas **DS-05** y **D-04**.
-        *Para cerrarlo:* `pip-audit` y generación de SBOM en `ci.yml`.
-- [ ] **Cobertura ≥ 80 % branch**
-      → **No medida.** 52 pruebas en verde, pero sin `pytest --cov`. Se sabe que
-        `deployer.py` (220 líneas) no tiene pruebas unitarias: la cobertura de rama real está
-        casi con seguridad por debajo del umbral. Deudas **D-02** y **D-05**.
-        *Para cerrarlo:* medir, y cubrir `deployer.py`.
+- [x] **SAST sin findings críticos/altos**
+      → `bandit -r app/ -ll` en el job `sast` de CI. **0 hallazgos** sobre 645 líneas, en
+        ninguna severidad. Se analiza solo `app/`: en `tests/` los `assert` dispararían B101
+        sin aportar nada.
+- [x] **Dependencias verificadas (SCA) — sin deps alucinadas ni vulnerables (A03)**
+      → `pip-audit -r requirements.txt` en el job `sca`: **sin vulnerabilidades conocidas**.
+        Se auditan las dependencias de **producción**, no el entorno de desarrollo: una CVE en
+        `pytest` no llega nunca al servidor.
+        Las 4 dependencias directas están fijadas a versiones existentes, verificadas contra
+        PyPI. **SBOM CycloneDX 1.6** generado y archivado como artefacto por ejecución
+        (90 días de retención). Cierra **DS-05** y **D-04**.
+- [x] **Cobertura ≥ 80 % branch**
+      → **93,47 %**, con umbral automático `--cov-fail-under=80` en CI.
+        Medida **solo con las pruebas rápidas**, a propósito: una puerta de calidad que
+        dependa de que haya un Docker en marcha es frágil. Cierra **D-05**.
+        Lo que queda sin cubrir es esencialmente `deployer._run`, la frontera con el
+        subproceso de Docker, que sí ejercitan las pruebas e2e.
 - [ ] **Dual review completado (humano + IA)**
-      → **Pendiente de la mitad humana.** El código se escribió y revisó con asistencia de IA;
-        falta la revisión de Jeremi Alcala.
+      → **Pendiente de la mitad humana.** El código se escribió y revisó con asistencia de IA,
+        con `bandit` y `pip-audit` como red automática. Falta que **Jeremi Alcala** revise el
+        diff. Es el único criterio de este gate que no puede automatizarse, y marcarlo sin que
+        ocurra vaciaría de sentido el control.
 - [x] **Sin secretos en el código**
-      → Verificado: `git ls-files` no lista `.env` ni `config/apps.yml`; `.gitignore` los
-        excluye; el instalador genera el secreto en el servidor y no lo persiste en el
-        repositorio. `config.load_settings` rechaza arrancar con un secreto de menos de 32
-        caracteres.
+      → `git ls-files` no lista `.env` ni `config/apps.yml`; `.gitignore` los excluye; el
+        instalador genera el secreto en el servidor y no lo persiste en el repositorio.
+        `config.load_settings` rechaza arrancar con un secreto de menos de 32 caracteres.
 
-## Qué falta, en orden de valor
+## Cómo se comprueba
 
-1. `pip-audit` en CI — cierra DS-05 y es el más barato de los tres.
-2. Medición de cobertura y pruebas de `deployer.py` — cierra D-02 y D-05.
-3. SAST — el de menor valor marginal aquí: la superficie es pequeña y ya revisada, pero es
-   criterio del gate.
-4. Revisión humana del código.
+Los cuatro criterios automáticos corren en cada push y pull request:
+
+| Job de CI | Criterio | Comando |
+|---|---|---|
+| `test` | Cobertura ≥ 80 % branch | `pytest -m "not docker" --cov=app --cov-branch --cov-fail-under=80` |
+| `sast` | SAST | `bandit -r app/ -ll` |
+| `sca` | SCA | `pip-audit -r requirements.txt` |
+| `sca` | SBOM | `cyclonedx-py requirements requirements.txt -o sbom.json` |
+
+## Para cerrar el gate
+
+Una sola cosa: **que Jeremi revise el código**. Cuando ocurra, marcar la casilla del dual
+review, cambiar el estado de este documento a `SUPERADO` y cortar `0.5.0` en el `CHANGELOG.md`.

@@ -4,10 +4,10 @@
 * **Fecha:** 2026-08-30
 * **Decisores:** Jeremi Alcala
 * **Fase AI-DLC:** 04-testing
-* **Versión:** 0.4.1
+* **Versión:** 0.4.2
 * **Gate:** 3
 * **Alcance:** receptor (`receiver/`), ciclo de despliegue contra Docker real y verificación manual de la superficie del socket-proxy
-* **Estado de la suite:** **59 pruebas, todas en verde** — 53 rápidas (0,8 s) + 6 de extremo a extremo contra Docker (2 min 20 s)
+* **Estado de la suite:** **91 pruebas, todas en verde** — 85 rápidas (6 s, **93,47 % de cobertura de rama**) + 6 de extremo a extremo contra Docker (2 min 20 s)
 
 ## Principio
 
@@ -26,9 +26,28 @@ fue la deuda D-01, verificado solo a mano; ahora tiene pruebas contra Docker rea
 | `test_security.py` | 14 | Firma HMAC y deduplicación de entregas | Unitario |
 | `test_events.py` | 15 | Traducción de payloads a intención de despliegue | Unitario |
 | `test_config.py` | 15 | Arranque seguro y validación del inventario | Unitario |
+| `test_deployer.py` | 13 | Bordes del despliegue con Docker sustituido | Unitario |
+| `test_queue.py` | 9 | Serialización por app y acotación del histórico | Unitario |
+| `test_admin.py` | 10 | `/status`, `/reload` y bordes del webhook | Integración |
 | `test_webhook.py` | 9 | Endpoint completo con el despliegue sustituido | Integración |
 | `test_rollback_e2e.py` | 6 | Ciclo real: `pull`, `up -d`, healthcheck y rollback | **Extremo a extremo** |
-| **Total** | **59** | | |
+| **Total** | **91** | | |
+
+### Cobertura
+
+**93,47 % de rama**, con umbral automático en CI (`--cov-fail-under=80`). Se mide **solo con
+las pruebas rápidas**: una puerta de calidad que dependa de que haya un Docker en marcha es
+frágil. Lo que queda sin cubrir es esencialmente `deployer._run` —la frontera con el subproceso
+de Docker—, que sí ejercitan las e2e.
+
+| Módulo | Cobertura de rama |
+|---|---|
+| `main.py` | 100 % |
+| `config.py` | 98 % |
+| `security.py` | 96 % |
+| `events.py` | 94 % |
+| `queue.py` | 93 % |
+| `deployer.py` | 85 % |
 
 Las de extremo a extremo llevan el marcador `docker` y **se saltan solas** si no hay un daemon
 en marcha, de modo que `pytest` sigue siendo útil en una máquina sin Docker:
@@ -202,14 +221,15 @@ Registradas aquí porque respaldan requisitos que ninguna prueba automática cub
 
 ## Deuda de pruebas
 
-| ID | Deuda | Riesgo | Cómo se cerraría |
+| ID | Deuda | Estado | Cómo se cerró / se cerraría |
 |---|---|---|---|
-| ~~**D-01**~~ | ~~RF05 sin prueba e2e~~ | — | **Cerrada** por `test_rollback_e2e.py`, verificada por mutación |
-| **D-02** | `deployer.py` sin pruebas unitarias | Las e2e cubren el camino feliz y el rollback, pero no los bordes: timeouts, `health_url` ausente, estado corrupto | Sustituir `_run` por un doble y probar las ramas sin Docker |
-| **D-03** | Sin prueba de concurrencia | La serialización por app está razonada pero no demostrada | Encolar N trabajos de la misma app y verificar el orden |
-| **D-04** | Sin escaneo de dependencias ni SBOM | Cadena de suministro sin verificar (A03, DS-05) | `pip-audit` en el workflow `ci` |
-| **D-05** | Cobertura no medida | No se sabe qué ramas quedan sin ejecutar | `pytest --cov` con umbral en CI |
-| **D-06** | Mutation testing no sistemático | Solo se mutó el camino del rollback, a mano | `mutmut` sobre `app/`, objetivo ≥ 60 % |
+| ~~**D-01**~~ | RF05 sin prueba e2e | **Cerrada** | `test_rollback_e2e.py`, validada por mutación |
+| ~~**D-02**~~ | `deployer.py` sin pruebas unitarias | **Cerrada** | `test_deployer.py`: 13 pruebas de bordes con `_run` sustituido |
+| ~~**D-03**~~ | Sin prueba de concurrencia | **Cerrada** | `test_queue.py`: demuestra que la misma app se serializa y que apps distintas van en paralelo |
+| ~~**D-04**~~ | Sin escaneo de dependencias ni SBOM | **Cerrada** | `pip-audit` + SBOM CycloneDX en el job `sca` |
+| ~~**D-05**~~ | Cobertura no medida | **Cerrada** | 93,47 % con umbral `--cov-fail-under=80` en CI |
+| **D-06** | Mutation testing no sistemático | Abierta | Solo se mutó a mano el camino del rollback. `mutmut` sobre `app/`, objetivo ≥ 60 % |
+| **D-07** | Sin pruebas de contrato | Abierta | Nada valida el OpenAPI de `interfaces-contract.md` frente a la implementación real |
 
 ## Riesgo conocido de las pruebas e2e
 
@@ -231,9 +251,9 @@ python -m venv .venv && ./.venv/bin/pip install -r requirements-dev.txt
 ./.venv/bin/pytest -q -m "not docker"  # solo las rápidas
 ```
 
-En CI (`.github/workflows/ci.yml`) van en **dos jobs separados**: `test` da señal en segundos y
-`test-e2e` ejecuta el ciclo contra Docker. La separación evita que un fallo trivial tarde tres
-minutos en aparecer.
+En CI (`.github/workflows/ci.yml`) hay **cuatro jobs**: `test` (rápidas + umbral de cobertura),
+`test-e2e` (ciclo contra Docker), `sast` (bandit) y `sca` (pip-audit + SBOM). La separación
+evita que un fallo trivial tarde tres minutos en aparecer.
 
 ## Prueba manual de extremo a extremo del webhook
 

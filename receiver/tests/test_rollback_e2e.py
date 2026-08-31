@@ -20,10 +20,12 @@ registro a por un repositorio que solo existe en local.
 
 from __future__ import annotations
 
+import os
 import shutil
 import socket
 import subprocess
 import uuid
+import warnings
 from pathlib import Path
 
 import httpx
@@ -151,12 +153,38 @@ class Escenario:
             return False
 
     def derribar(self) -> None:
-        _correr(
-            "docker", "compose",
-            "-f", str(self.app.compose_path),
-            "-p", self.proyecto,
-            "down", "-v", "--remove-orphans",
+        """Derriba el stack y verifica que de verdad se fue.
+
+        El compose usa `${IMAGE_TAG:?}`, asi que **`down` tambien necesita la
+        variable**: sin ella compose ni siquiera parsea el fichero y falla en
+        silencio, dejando el contenedor vivo y su red retenida. Con suficientes
+        ejecuciones eso agota los rangos de red del daemon
+        ("all predefined address pools have been fully subnetted") y rompe
+        pruebas que no tienen nada que ver.
+        """
+        derribado = subprocess.run(
+            [
+                "docker", "compose",
+                "-f", str(self.app.compose_path),
+                "-p", self.proyecto,
+                "down", "-v", "--remove-orphans",
+            ],
+            env={**os.environ, "IMAGE_TAG": f"sha-{SHA_SANO}"},
+            capture_output=True,
+            text=True,
             timeout=180,
+        )
+        if derribado.returncode == 0:
+            return
+
+        # Red de seguridad: si compose no pudo, se fuerza a mano. Un teardown
+        # que falla en silencio contamina las ejecuciones siguientes.
+        _correr("docker", "rm", "-f", self.contenedor, timeout=60)
+        _correr("docker", "network", "rm", f"{self.proyecto}_default", timeout=60)
+        warnings.warn(
+            f"`compose down` fallo para {self.proyecto} y hubo que forzar la limpieza: "
+            f"{derribado.stdout}{derribado.stderr}",
+            stacklevel=2,
         )
 
 
