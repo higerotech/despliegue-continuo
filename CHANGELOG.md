@@ -21,12 +21,41 @@ Gate 3 → `0.4.0`, Gate 4 → `0.5.0`, Gate 5 → `1.0.0`.
 
 ## [Unreleased]
 
+### Añadido
+
+- **Prueba de extremo a extremo del rollback contra Docker real** (`test_rollback_e2e.py`,
+  6 pruebas): cierra la deuda **D-01**, que era la única que protegía un requisito crítico.
+  RF05 pasa de estar verificado a mano a tener cobertura automática del ciclo completo
+  `pull` → `up -d` → healthcheck → vuelta al tag anterior.
+  El escenario usa dos tags locales sobre un mismo repositorio de imagen (`traefik/whoami`
+  que sirve HTTP, `alpine` que arranca y muere) con `pull_policy: never`, de modo que
+  `docker compose pull` no va al registro.
+- **Validación por mutación del camino crítico**: al desactivar la condición de rollback en
+  `deployer.deploy`, 2 pruebas fallan. Una prueba que pasa solo vale si falla cuando el
+  código se rompe.
+- Marcador `docker` en `pytest.ini`: las e2e se saltan solas si no hay daemon, así que
+  `pytest -m "not docker"` sigue siendo útil en una máquina sin Docker.
+- CI dividido en dos jobs: `test` (53 pruebas, segundos) y `test-e2e` (6 pruebas, ~2 min),
+  para que un fallo trivial no tarde tres minutos en aparecer.
+
+### Cambiado
+
+- `deployer._run` solo impone `DOCKER_HOST` **si `docker_host` tiene valor**. Un valor vacío
+  es ahora una renuncia explícita que deja el destino al cliente del entorno; lo usan las
+  pruebas de integración. En producción el valor por defecto sigue siendo el socket-proxy, y
+  una prueba lo fija (`test_un_docker_host_vacio_solo_ocurre_si_se_pide_expresamente`).
+
+### Deuda nueva
+
+- **D-06**: mutation testing sistemático (`mutmut`). La mutación del rollback se hizo a mano.
+
 **Para cerrar los Gates 2 y 3, que quedaron abiertos:**
 
 - **Gate 2**: `pip-audit` y SBOM en CI (DS-05, D-04); medición de cobertura y pruebas de
   `deployer.py` (D-02, D-05); SAST; revisión humana del código.
-- **Gate 3**: **D-01**, la prueba e2e del rollback — la única deuda que protege un requisito
-  crítico; D-03, prueba de concurrencia; matriz OWASP ejecutada.
+- **Gate 3**: ~~D-01~~ **cerrada**; quedan D-02 (unitarias de `deployer.py`), D-03 (prueba de
+  concurrencia), matriz OWASP ejecutada, pruebas de contrato y mutation testing sistemático
+  (D-06).
 
 **Para el Gate 4 (despliegue):**
 

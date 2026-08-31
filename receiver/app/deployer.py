@@ -115,7 +115,11 @@ class Deployer:
         env["IMAGE"] = app.image
         # El cliente habla con el socket-proxy, nunca con /var/run/docker.sock:
         # asi el proceso no necesita pertenecer al grupo docker (ADR-0005).
-        env["DOCKER_HOST"] = self._settings.docker_host
+        # Un docker_host vacio es una renuncia EXPLICITA: deja el destino al
+        # cliente del entorno. Solo se usa en las pruebas de integracion; en
+        # produccion el valor por defecto es el proxy.
+        if self._settings.docker_host:
+            env["DOCKER_HOST"] = self._settings.docker_host
 
         process = await asyncio.create_subprocess_exec(
             *args,

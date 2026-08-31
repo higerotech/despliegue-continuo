@@ -30,6 +30,13 @@ class TestSettings:
         settings = load_settings(VALID_ENV | {"DOCKER_HOST": "tcp://127.0.0.1:2999"})
         assert settings.docker_host == "tcp://127.0.0.1:2999"
 
+    def test_un_docker_host_vacio_solo_ocurre_si_se_pide_expresamente(self):
+        # Vacio significa "usa el cliente del entorno" y salta el socket-proxy.
+        # Es una renuncia consciente que usan las pruebas de integracion: nunca
+        # debe ser el resultado de olvidar la variable.
+        assert load_settings(VALID_ENV).docker_host == "tcp://127.0.0.1:2375"
+        assert load_settings(VALID_ENV | {"DOCKER_HOST": ""}).docker_host == ""
+
     def test_rechaza_un_puerto_no_numerico(self):
         with pytest.raises(ConfigError, match="entero"):
             load_settings(VALID_ENV | {"BIND_PORT": "nueve mil"})
