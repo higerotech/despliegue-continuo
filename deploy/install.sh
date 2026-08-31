@@ -19,10 +19,29 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 
+# Los prerequisitos se comprueban TODOS aqui arriba, antes de crear usuarios,
+# contenedores o directorios: es preferible negarse a empezar que morir a
+# mitad de camino y dejar el sistema a medio instalar.
 [[ $EUID -eq 0 ]] || die "ejecutalo con sudo."
 command -v docker >/dev/null || die "Docker no esta instalado."
 docker compose version >/dev/null 2>&1 || die "falta el plugin 'docker compose'."
 command -v python3 >/dev/null || die "python3 no esta instalado."
+command -v rsync   >/dev/null || die "rsync no esta instalado (lo usa el despliegue del codigo)."
+command -v openssl >/dev/null || die "openssl no esta instalado (genera el secreto del webhook)."
+
+# python3 a secas no basta: en Debian y Ubuntu el modulo venv viaja en un
+# paquete aparte. Sin el, la instalacion moria justo al crear el entorno
+# virtual, con el receptor ya copiado y el usuario ya creado.
+if ! python3 -m venv --help >/dev/null 2>&1; then
+    if command -v apt-get >/dev/null; then
+        log "falta el modulo venv de python3; instalando python3-venv"
+        apt-get update -qq
+        apt-get install -y -qq python3-venv
+        python3 -m venv --help >/dev/null 2>&1             || die "python3-venv se instalo pero el modulo sigue sin estar disponible."
+    else
+        die "falta el modulo venv de python3. Instala el paquete python3-venv de tu distribucion."
+    fi
+fi
 
 # --- usuario de servicio -----------------------------------------------------
 # Sin shell de login y sin home propio: solo existe para correr el servicio.
