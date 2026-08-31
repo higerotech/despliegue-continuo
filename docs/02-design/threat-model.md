@@ -159,5 +159,5 @@ aplicaciones de terceros, o apareciera una segunda superficie de entrada.
 | **DS-02** | Sin rotación del `.jsonl` de despliegues | Disco lleno ⇒ el receptor deja de registrar | Gate 4 |
 | **DS-03** | Sin notificación del resultado del despliegue | Un fallo puede pasar inadvertido (A09) | Gate 4 |
 | **DS-04** | Sin procedimiento probado de rotación del secreto | T10 tarda más en cerrarse tras una sospecha | Runbook, Gate 4 |
-| **DS-05** | Sin SBOM ni escaneo de dependencias del receptor | Cadena de suministro sin verificar (A03) | Gate 4 |
+| ~~**DS-05**~~ | ~~Sin SBOM ni escaneo de dependencias~~ | — | **Cerrada**: `pip-audit` y SBOM CycloneDX en CI (job `sca`) |
 | **DS-06** | `health_url` es opcional | Sin ella no hay verificación real ni rollback fiable | Decisión pendiente: hacerla obligatoria en `load_apps` |

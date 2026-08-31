@@ -35,8 +35,30 @@ Gate 3 → `0.4.0`, Gate 4 → `0.5.0`, Gate 5 → `1.0.0`.
   código se rompe.
 - Marcador `docker` en `pytest.ini`: las e2e se saltan solas si no hay daemon, así que
   `pytest -m "not docker"` sigue siendo útil en una máquina sin Docker.
-- CI dividido en dos jobs: `test` (53 pruebas, segundos) y `test-e2e` (6 pruebas, ~2 min),
-  para que un fallo trivial no tarde tres minutos en aparecer.
+- CI dividido en cuatro jobs: `test` (rápidas + umbral de cobertura), `test-e2e` (ciclo contra
+  Docker), `sast` y `sca`, para que un fallo trivial no tarde tres minutos en aparecer.
+- **32 pruebas rápidas nuevas** que cierran cuatro deudas de una vez:
+  - `test_deployer.py` (13): bordes que las e2e no tocan — falta el compose, sin `health_url`,
+    `pull` fallido, healthcheck agotado, rollback que también falla, estado corrupto,
+    escritura atómica. Cierra **D-02**.
+  - `test_queue.py` (9): demuestra que la misma aplicación **se serializa** (RNF04) y que
+    aplicaciones distintas avanzan en paralelo; histórico acotado; un deployer que revienta no
+    mata al worker. Cierra **D-03**.
+  - `test_admin.py` (10): `/status` y `/reload` con y sin autorización, que un inventario roto
+    no tumba el vigente, cuerpo excesivo y JSON inválido.
+- **Cobertura de rama medida y con umbral**: **93,47 %**, `--cov-fail-under=80` en CI. Se mide
+  solo con las pruebas rápidas: una puerta que dependa de tener Docker sería frágil.
+  Cierra **D-05**.
+
+### Corregido
+
+- **El teardown de las pruebas e2e no derribaba nada y lo hacía en silencio.** Ejecutaba
+  `docker compose down` sin `IMAGE_TAG`, y como el compose de prueba usa `${IMAGE_TAG:?}`,
+  compose ni siquiera parseaba el fichero; el código de salida no se comprobaba. Cada
+  ejecución dejaba un contenedor vivo reteniendo su red, hasta agotar los rangos del daemon
+  (`all predefined address pools have been fully subnetted`) y romper pruebas sin relación.
+  Ahora se pasa la variable, se comprueba el resultado, hay una limpieza forzada de respaldo
+  y un aviso visible si hizo falta usarla.
 
 ### Cambiado
 
@@ -45,17 +67,28 @@ Gate 3 → `0.4.0`, Gate 4 → `0.5.0`, Gate 5 → `1.0.0`.
   pruebas de integración. En producción el valor por defecto sigue siendo el socket-proxy, y
   una prueba lo fija (`test_un_docker_host_vacio_solo_ocurre_si_se_pide_expresamente`).
 
+### Seguridad
+
+- **SAST con `bandit`** en CI (job `sast`): **0 hallazgos** en 645 líneas, en ninguna severidad.
+- **SCA con `pip-audit`** sobre las dependencias de producción (job `sca`): sin
+  vulnerabilidades conocidas. Se auditan las de producción y no el entorno de desarrollo,
+  porque una CVE en `pytest` no llega nunca al servidor.
+- **SBOM CycloneDX 1.6** generado en cada ejecución y archivado como artefacto (90 días). No
+  se versiona: cambia con cada actualización de dependencias y solo generaría ruido en el diff.
+  Cierra la deuda de seguridad **DS-05**.
+
 ### Deuda nueva
 
 - **D-06**: mutation testing sistemático (`mutmut`). La mutación del rollback se hizo a mano.
+- **D-07**: pruebas de contrato. Nada valida hoy el OpenAPI de `interfaces-contract.md` frente
+  a la implementación real.
 
-**Para cerrar los Gates 2 y 3, que quedaron abiertos:**
+**Para cerrar los Gates 2 y 3, que siguen abiertos:**
 
-- **Gate 2**: `pip-audit` y SBOM en CI (DS-05, D-04); medición de cobertura y pruebas de
-  `deployer.py` (D-02, D-05); SAST; revisión humana del código.
-- **Gate 3**: ~~D-01~~ **cerrada**; quedan D-02 (unitarias de `deployer.py`), D-03 (prueba de
-  concurrencia), matriz OWASP ejecutada, pruebas de contrato y mutation testing sistemático
-  (D-06).
+- **Gate 2**: 4 de 5 criterios cumplidos. Queda **solo la revisión humana del código**, que no
+  puede automatizarse. Al hacerla, cortar `0.5.0`.
+- **Gate 3**: quedan la matriz OWASP ejecutada de forma sistemática, DAST, pruebas de contrato
+  (**D-07**) y mutation testing sistemático (**D-06**).
 
 **Para el Gate 4 (despliegue):**
 

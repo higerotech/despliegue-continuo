@@ -8,14 +8,17 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    working-directory: receiver
+
 jobs:
   # Señal rápida: falla en segundos si algo básico se rompió.
+  # El umbral de cobertura se mide SOLO con estas pruebas, a propósito: una
+  # puerta de calidad que dependa de que haya un Docker en marcha es frágil.
   test:
-    name: pruebas rapidas
+    name: pruebas y cobertura
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: receiver
     steps:
       - uses: actions/checkout@v7
 
@@ -26,16 +29,17 @@ jobs:
           cache-dependency-path: receiver/requirements-dev.txt
 
       - run: pip install -r requirements-dev.txt
-      - run: pytest -q -m "not docker"
+
+      - name: Pruebas rapidas con umbral de cobertura de rama (Gate 2)
+        run: >-
+          pytest -q -m "not docker" --strict-markers
+          --cov=app --cov-branch --cov-report=term-missing --cov-fail-under=80
 
   # Ciclo real contra Docker: despliegue, healthcheck y rollback (D-01, RF05).
   # Tarda unos 2-3 minutos; por eso va en un job aparte del anterior.
   test-e2e:
     name: rollback contra Docker
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: receiver
     steps:
       - uses: actions/checkout@v7
 
@@ -54,3 +58,55 @@ jobs:
       # coleccion. Y si '-m docker' no selecciona nada, pytest sale con codigo
       # 5 y el job falla: estas pruebas no pueden desaparecer en silencio.
       - run: pytest -q -m docker --strict-markers
+
+  # Gate 2 — analisis estatico. Solo sobre app/: en tests/ los assert
+  # dispararian B101 sin aportar nada.
+  sast:
+    name: SAST (bandit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: receiver/requirements-dev.txt
+
+      - run: pip install -r requirements-dev.txt
+
+      # -lll falla solo con severidad alta; -ll incluye media. Se usa -ll
+      # porque la superficie es pequena y no hay ruido que tolerar.
+      - name: bandit sobre el codigo de aplicacion
+        run: bandit -r app/ -ll
+
+  # Gate 2 — cadena de suministro (A03): vulnerabilidades conocidas y SBOM.
+  sca:
+    name: SCA y SBOM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: receiver/requirements-dev.txt
+
+      - run: pip install -r requirements-dev.txt
+
+      # Se auditan las dependencias de PRODUCCION, no el entorno de desarrollo:
+      # una CVE en pytest no llega nunca al servidor.
+      - name: pip-audit sobre las dependencias de produccion
+        run: pip-audit -r requirements.txt --progress-spinner off
+
+      - name: Generar SBOM (CycloneDX)
+        run: cyclonedx-py requirements requirements.txt -o sbom.json
+
+      # El SBOM se archiva por ejecucion en vez de versionarse: cambia con cada
+      # actualizacion de dependencias y versionarlo solo genera ruido en el diff.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sbom-cyclonedx
+          path: receiver/sbom.json
+          retention-days: 90
