@@ -45,9 +45,21 @@ install -d -o root -g root -m 0755 "$PROXY_DIR"
 install -m 0644 "$REPO_DIR/deploy/docker-socket-proxy.yml" "$PROXY_DIR/docker-compose.yml"
 docker compose -f "$PROXY_DIR/docker-compose.yml" -p cd-socket-proxy up -d
 
-# Comprobacion real: la API responde y 'exec' esta cerrado.
-if ! DOCKER_HOST=tcp://127.0.0.1:2375 docker version --format '{{.Server.Version}}' >/dev/null 2>&1; then
-    die "el socket-proxy no responde en 127.0.0.1:2375"
+# El contenedor tarda un instante en aceptar conexiones: comprobar justo
+# despues de 'up -d' daba un falso negativo. Se reintenta antes de rendirse.
+log "esperando a que el socket-proxy acepte conexiones"
+proxy_listo=0
+for _ in $(seq 1 30); do
+    if DOCKER_HOST=tcp://127.0.0.1:2375 docker version --format '{{.Server.Version}}' >/dev/null 2>&1; then
+        proxy_listo=1
+        break
+    fi
+    sleep 1
+done
+if [[ $proxy_listo -eq 0 ]]; then
+    echo "--- ultimos logs del socket-proxy ---" >&2
+    docker logs --tail 15 cd-socket-proxy 2>&1 | sed 's/^/  /' >&2
+    die "el socket-proxy no responde en 127.0.0.1:2375 tras 30s"
 fi
 log "socket-proxy operativo"
 
