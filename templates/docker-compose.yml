@@ -6,7 +6,7 @@
 
 services:
   api:
-    image: ghcr.io/jeremialcala/mi-api:${IMAGE_TAG:?IMAGE_TAG es obligatorio}
+    image: ghcr.io/higerotech/mi-api:${IMAGE_TAG:?IMAGE_TAG es obligatorio}
     restart: unless-stopped
     env_file:
       - .env

@@ -6,13 +6,13 @@
 
 apps:
   - name: mi-api                              # identificador y nombre del proyecto compose
-    repo: jeremialcala/mi-api                 # owner/repo exacto en GitHub
+    repo: higerotech/mi-api                 # owner/repo exacto en GitHub
     branch: main                              # unica rama desplegable
     event: workflow_run                       # workflow_run (recomendado) | push
     workflow: build                           # nombre del workflow que debe haber pasado
     project_dir: /srv/apps/mi-api             # donde vive el docker-compose.yml
     compose_file: docker-compose.yml
-    image: ghcr.io/jeremialcala/mi-api        # solo informativo, expuesto como $IMAGE
+    image: ghcr.io/higerotech/mi-api        # solo informativo, expuesto como $IMAGE
     tag_template: "sha-{short_sha}"           # debe coincidir con el tag que publica Actions
     services: []                              # vacio = pull de todos los servicios
     health_url: http://127.0.0.1:8080/health  # sin esto no hay verificacion ni rollback fiable
@@ -24,9 +24,9 @@ apps:
   # Segundo ejemplo: despliegue directo por push, sin build previa en Actions.
   # Util para un sitio estatico o una app que se construye en el propio servidor.
   # - name: web
-  #   repo: jeremialcala/web
+  #   repo: higerotech/web
   #   branch: main
   #   event: push
   #   project_dir: /srv/apps/web
-  #   image: ghcr.io/jeremialcala/web
+  #   image: ghcr.io/higerotech/web
   #   health_url: http://127.0.0.1:8081/

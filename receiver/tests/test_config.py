@@ -44,9 +44,9 @@ def write_apps(tmp_path, body: str):
 MINIMA = """
 apps:
   - name: mi-api
-    repo: Jeremialcala/Mi-API
+    repo: Higerotech/Mi-API
     project_dir: /srv/apps/mi-api
-    image: ghcr.io/jeremialcala/mi-api
+    image: ghcr.io/higerotech/mi-api
 """
 
 
@@ -54,16 +54,16 @@ class TestApps:
     def test_normaliza_el_repo_a_minusculas(self, tmp_path):
         # GitHub no distingue mayusculas en full_name; el indice tampoco debe.
         apps = load_apps(write_apps(tmp_path, MINIMA))
-        assert "jeremialcala/mi-api" in apps
+        assert "higerotech/mi-api" in apps
 
     def test_valores_por_defecto_seguros(self, tmp_path):
-        app = load_apps(write_apps(tmp_path, MINIMA))["jeremialcala/mi-api"]
+        app = load_apps(write_apps(tmp_path, MINIMA))["higerotech/mi-api"]
         assert app.branch == "main"
         assert app.event == "workflow_run"
         assert app.rollback is True
 
     def test_calcula_el_tag_desde_el_sha(self, tmp_path):
-        app = load_apps(write_apps(tmp_path, MINIMA))["jeremialcala/mi-api"]
+        app = load_apps(write_apps(tmp_path, MINIMA))["higerotech/mi-api"]
         assert app.tag_for("1a2b3c4d5e6f7890") == "sha-1a2b3c4"
 
     def test_falla_si_falta_un_campo_obligatorio(self, tmp_path):

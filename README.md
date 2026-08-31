@@ -11,7 +11,7 @@ healthcheck y rollback automatico.
 push a main
     |
     v
-GitHub Actions ──build──> GHCR (ghcr.io/owner/app:sha-1a2b3c4)
+GitHub Actions ──build──> GHCR (ghcr.io/higerotech/app:sha-1a2b3c4)
     |
     | evento workflow_run (firmado con HMAC-SHA256)
     v
@@ -43,6 +43,12 @@ abre una conexion saliente. No hay puertos abiertos, ni IP fija, ni
 certificados que renovar. Y el tunel publica unicamente `/webhook`: `/status` y
 `/reload` no existen desde internet.
 
+**El receptor no pertenece al grupo `docker`.** Habla con la API a traves de
+un socket-proxy que solo expone lo que `docker compose` necesita: `exec`,
+`secrets`, `swarm` y `build` devuelven `403`. Esto **reduce** la superficie,
+pero no elimina la equivalencia a root, porque crear contenedores sigue siendo
+imprescindible. Esta razonado sin adornos en ADR-0005.
+
 **El inventario `apps.yml` es la allowlist.** Un webhook de un repo que no este
 declarado se ignora. Nada del payload llega nunca a un shell: los comandos se
 ejecutan con `exec` y lista de argumentos.
@@ -60,6 +66,7 @@ ejecutan con `exec` y lista de argumentos.
 | `config/apps.example.yml` | Plantilla del inventario |
 | `deploy/install.sh` | Instalador para el servidor |
 | `deploy/cd-receiver.service` | Unidad systemd endurecida |
+| `deploy/docker-socket-proxy.yml` | API de Docker recortada; evita el grupo `docker` |
 | `ingress/` | Cloudflare Tunnel y Tailscale Funnel |
 | `templates/` | Workflow y compose para el repo de cada app |
 
@@ -68,7 +75,7 @@ ejecutan con `exec` y lista de argumentos.
 ### 1. Servidor
 
 ```bash
-git clone https://github.com/jeremialcala/despliegue-continuo /tmp/cd
+git clone https://github.com/higerotech/despliegue-continuo /tmp/cd
 sudo /tmp/cd/deploy/install.sh
 ```
 
@@ -79,11 +86,12 @@ muestra por pantalla, deja el servicio activo y comprueba `/health`.
 
 En el servidor, `/srv/apps/<app>/docker-compose.yml` a partir de
 `templates/docker-compose.yml`. La imagen debe usar `${IMAGE_TAG}`, nunca un
-tag fijo. Autentica Docker contra GHCR una vez, con un PAT de solo lectura:
+tag fijo.
 
-```bash
-echo "$GHCR_TOKEN" | sudo -u deploy docker login ghcr.io -u jeremialcala --password-stdin
-```
+Al ser publicos los paquetes de GHCR, el `pull` es anonimo y **no hace falta
+`docker login`** en el servidor. Si alguna aplicacion pasara a tener imagen
+privada, habria que autenticar el daemon (no el usuario `deploy`, que ya no
+habla directamente con Docker).
 
 Declara la app en `/etc/cd-receiver/apps.yml` y recarga sin reiniciar:
 
@@ -118,7 +126,7 @@ En cada repo de aplicacion, `Settings > Webhooks > Add webhook`:
 O con `gh`:
 
 ```bash
-gh api repos/jeremialcala/mi-api/hooks -X POST \
+gh api repos/higerotech/mi-api/hooks -X POST \
   -f name=web -F active=true -f 'events[]=workflow_run' \
   -f config[url]=https://deploy.tudominio.com/webhook \
   -f config[content_type]=json \
@@ -168,7 +176,7 @@ python -m venv .venv && ./.venv/bin/pip install -r requirements-dev.txt
 Para probar en local sin GitHub, firma tu mismo la peticion:
 
 ```bash
-BODY='{"action":"completed","workflow_run":{"head_branch":"main","head_sha":"1a2b3c4d5e6f78901234567890abcdef12345678","conclusion":"success","name":"build"},"repository":{"full_name":"jeremialcala/mi-api"}}'
+BODY='{"action":"completed","workflow_run":{"head_branch":"main","head_sha":"1a2b3c4d5e6f78901234567890abcdef12345678","conclusion":"success","name":"build"},"repository":{"full_name":"higerotech/mi-api"}}'
 SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" | awk '{print $2}')
 curl -si http://127.0.0.1:9000/webhook \
   -H "X-GitHub-Event: workflow_run" \
@@ -178,4 +186,18 @@ curl -si http://127.0.0.1:9000/webhook \
   -d "$BODY"
 ```
 
-Detalle del diseño y del modelo de amenazas en [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+## Documentación
+
+El proyecto sigue **AI-DLC**. Índice de navegación en
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md); los documentos que más se consultan:
+
+| Documento | Para qué |
+|---|---|
+| [`docs/02-design/architecture.md`](docs/02-design/architecture.md) | Diagramas C4, secuencia del flujo crítico y ciclo de vida del despliegue |
+| [`docs/02-design/threat-model.md`](docs/02-design/threat-model.md) | STRIDE, DREAD y riesgo residual |
+| [`docs/00-project/adr/`](docs/00-project/adr/) | Por qué cada decisión, con sus alternativas |
+| [`docs/03-implementation/deployment-runbook.md`](docs/03-implementation/deployment-runbook.md) | Instalar, operar y diagnosticar |
+| [`docs/04-testing/test-strategy.md`](docs/04-testing/test-strategy.md) | Qué está probado y qué no |
+
+**Estado de los gates:** 0 y 1 superados; **2 y 3 abiertos** (faltan SAST, SCA, cobertura
+medida, pruebas e2e y DAST). El detalle está en [`.ai-dlc/gates/`](.ai-dlc/gates/).

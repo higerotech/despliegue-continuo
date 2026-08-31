@@ -16,9 +16,9 @@ SHA = "1234567890abcdef1234567890abcdef12345678"
 APPS_YML = """
 apps:
   - name: mi-api
-    repo: jeremialcala/mi-api
+    repo: higerotech/mi-api
     project_dir: /srv/apps/mi-api
-    image: ghcr.io/jeremialcala/mi-api
+    image: ghcr.io/higerotech/mi-api
     branch: main
     event: workflow_run
     workflow: build
@@ -71,7 +71,7 @@ def post(client, payload: dict, event: str = "workflow_run", delivery: str = "d-
     )
 
 
-def success_payload(branch: str = "main", workflow: str = "build", repo: str = "Jeremialcala/mi-api"):
+def success_payload(branch: str = "main", workflow: str = "build", repo: str = "Higerotech/mi-api"):
     return {
         "action": "completed",
         "workflow_run": {

@@ -32,8 +32,11 @@ Se adopta la estructura AI-DLC de forma **retroactiva y declarada como tal**, co
    `signoz-deployment` e `instalador-docker-compose`, aunque la guía de deployment placement
    proponga `docs/02-design/adr/`. Fragmentar la numeración sería peor que la desviación.
 
-`docs/ARCHITECTURE.md` se conserva como resumen de ingeniería para quien llega al repositorio;
-las decisiones que contenía pasan a ser ADRs numeradas (0002 a 0008) y son la fuente de verdad.
+`docs/ARCHITECTURE.md` **se vacía y queda como índice de navegación**. La intención inicial era
+conservarlo como resumen de ingeniería, pero quedó desfasado en el primer cambio de diseño
+(seguía describiendo el grupo `docker` tras aprobarse ADR-0005): dos descripciones de la misma
+arquitectura derivan, no se mantienen. Las decisiones que contenía son ahora las ADRs 0002 a
+0008, que son la fuente de verdad.
 
 ## Alternativas consideradas
 

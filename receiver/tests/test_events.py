@@ -6,7 +6,7 @@ import pytest
 
 from app.events import IgnoredEvent, parse_event
 
-REPO = {"repository": {"full_name": "Jeremialcala/mi-api"}}
+REPO = {"repository": {"full_name": "Higerotech/mi-api"}}
 
 
 def workflow_run(**overrides):
@@ -23,7 +23,7 @@ def workflow_run(**overrides):
 class TestWorkflowRun:
     def test_extrae_la_intencion_de_un_run_correcto(self):
         intent = parse_event("workflow_run", workflow_run())
-        assert intent.repo == "jeremialcala/mi-api"  # normalizado a minusculas
+        assert intent.repo == "higerotech/mi-api"  # normalizado a minusculas
         assert intent.branch == "main"
         assert intent.sha.startswith("1234567")
         assert intent.workflow == "build"
