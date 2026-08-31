@@ -61,8 +61,9 @@ gitGraph
 |---|---|---|---|---|
 | `v0.1.0` | 0.1.0 | 0 | **Superado** | `charter.md`, `glossary.md`, `data-classification.md`, PRD `despliegue-continuo-webhook.md`, ADR-0001 |
 | `v0.2.0` | 0.2.0 | 1 | **Superado** | `architecture.md`, `threat-model.md`, `interfaces-contract.md`, ADR-0002 a ADR-0008 |
-| `v0.3.0` | 0.3.0 | 2 | **Abierto** — faltan SAST, SCA/SBOM, cobertura y revisión humana | `deployment-runbook.md`, este documento |
-| `v0.4.0` | 0.4.0 | 3 | **Abierto** — faltan e2e (D-01), matriz OWASP, DAST y mutation testing | `test-strategy.md`, `CHANGELOG.md` |
+| `v0.3.0` | 0.3.0 | 2 | Abierto al cortarse; **superado después en `v0.5.0`** | `deployment-runbook.md`, este documento |
+| `v0.4.0` | 0.4.0 | 3 | **Abierto** — quedan matriz OWASP, contrato (D-07), DAST y mutation testing (D-06) | `test-strategy.md`, `CHANGELOG.md` |
+| `v0.5.0` | 0.5.0 | 2 | **Superado** — SAST, SCA, cobertura 93,47 % y dual review completo | `test_rollback_e2e.py`, `test_deployer.py`, `test_queue.py`, `test_admin.py`, jobs `sast` y `sca` |
 
 ### Notas sobre este historial
 

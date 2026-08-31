@@ -199,5 +199,9 @@ El proyecto sigue **AI-DLC**. Índice de navegación en
 | [`docs/03-implementation/deployment-runbook.md`](docs/03-implementation/deployment-runbook.md) | Instalar, operar y diagnosticar |
 | [`docs/04-testing/test-strategy.md`](docs/04-testing/test-strategy.md) | Qué está probado y qué no |
 
-**Estado de los gates:** 0 y 1 superados; **2 y 3 abiertos** (faltan SAST, SCA, cobertura
-medida, pruebas e2e y DAST). El detalle está en [`.ai-dlc/gates/`](.ai-dlc/gates/).
+**Estado de los gates:** 0, 1 y 2 superados; **3 abierto** (faltan matriz OWASP, pruebas de
+contrato, DAST y mutation testing sistemático). El detalle está en
+[`.ai-dlc/gates/`](.ai-dlc/gates/).
+
+Calidad verificada en CI en cada push: **91 pruebas**, **93,47 % de cobertura de rama**,
+`bandit` sin hallazgos y `pip-audit` sin vulnerabilidades.
