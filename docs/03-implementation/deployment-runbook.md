@@ -135,10 +135,26 @@ SSH.
 | `413 payload demasiado grande` | Payload por encima de 1 MiB | Muy improbable; revisar `MAX_BODY_BYTES` |
 | Sin respuesta / timeout | El túnel está caído | `systemctl status cloudflared` |
 
+## Avisos de despliegue
+
+Configura `NOTIFY_URL` en `/etc/cd-receiver/receiver.env` con un webhook (Slack, Discord, ntfy
+o un relay propio) y reinicia. Por defecto solo avisa de **fallos y rollbacks**: un canal que
+suena en cada despliegue correcto se acaba silenciando.
+
+```bash
+sudo sed -i 's|^# NOTIFY_URL=.*|NOTIFY_URL=https://tu-canal/hook|' /etc/cd-receiver/receiver.env
+sudo systemctl restart cd-receiver
+journalctl -u cd-receiver -n 5 | grep -i avisos   # confirma si quedo activo
+```
+
+Para comprobarlo sin esperar a un fallo real, apunta `NOTIFY_URL` a un receptor de prueba y
+despliega un tag inexistente: el `pull` fallará y el aviso saldrá.
+
 ## Diagnóstico: el despliegue se encoló pero falló
 
-**El resultado del despliegue no vuelve a GitHub** (deuda DS-03): la entrega figura correcta
-aunque el despliegue fallara. Hay que mirarlo en el servidor.
+**El resultado del despliegue no vuelve a GitHub** (ADR-0008): la entrega figura correcta
+aunque el despliegue fallara. Con `NOTIFY_URL` configurada llega un aviso al canal; si no, hay
+que mirarlo en el servidor.
 
 ```bash
 curl -s http://127.0.0.1:9000/status | jq '.history[0]'

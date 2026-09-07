@@ -30,6 +30,9 @@ class DeployResult:
     tag: str
     ok: bool
     rolled_back: bool = False
+    # A donde se revirtio, o a donde se PODRIA haber revertido. Sin este dato,
+    # un aviso de rollback no puede decir a que version volvio el servicio.
+    previous_tag: str | None = None
     started_at: str = ""
     seconds: float = 0.0
     steps: list[Step] = field(default_factory=list)
@@ -42,6 +45,7 @@ class DeployResult:
             "tag": self.tag,
             "ok": self.ok,
             "rolled_back": self.rolled_back,
+            "previous_tag": self.previous_tag,
             "started_at": self.started_at,
             "seconds": round(self.seconds, 2),
             "error": self.error,
@@ -176,7 +180,10 @@ class Deployer:
         tag = app.tag_for(sha)
         previous_tag = self.read_state(app).get("current_tag")
 
-        result = DeployResult(app=app.name, sha=sha, tag=tag, ok=False, started_at=_now())
+        result = DeployResult(
+            app=app.name, sha=sha, tag=tag, ok=False,
+            previous_tag=previous_tag, started_at=_now(),
+        )
         started = time.monotonic()
 
         async def step(name: str, coro) -> None:

@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 
 from .config import AppConfig
 from .deployer import Deployer, DeployResult
+from .notify import Notificador
 
 logger = logging.getLogger("cd.queue")
 
@@ -31,8 +32,14 @@ class Job:
 class DeployQueue:
     """Un worker por app, creado bajo demanda y detenido de forma ordenada."""
 
-    def __init__(self, deployer: Deployer, history_size: int = 50) -> None:
+    def __init__(
+        self,
+        deployer: Deployer,
+        history_size: int = 50,
+        notificador: Notificador | None = None,
+    ) -> None:
         self._deployer = deployer
+        self._notificador = notificador
         self._queues: dict[str, asyncio.Queue[Job]] = {}
         self._workers: dict[str, asyncio.Task] = {}
         self._running: dict[str, Job] = {}
@@ -65,6 +72,7 @@ class DeployQueue:
             try:
                 result = await self._deployer.deploy(job.app, job.sha)
                 self._record(job, result)
+                await self._avisar(job, result)
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -72,6 +80,28 @@ class DeployQueue:
             finally:
                 self._running.pop(name, None)
                 queue.task_done()
+
+    async def _avisar(self, job: Job, result: DeployResult) -> None:
+        """Notifica el resultado, aislando cualquier fallo del canal.
+
+        Se llama DESPUES de registrar: el historico es la fuente de verdad y no
+        puede depender de que el aviso salga bien.
+
+        El aislamiento es explicito y no se delega en el `except` general del
+        worker: si un canal de avisos roto pudiera tumbar el worker, esa
+        aplicacion dejaria de desplegarse en silencio. `Notificador.enviar` ya
+        atrapa lo suyo; esto cubre tambien un notificador de terceros que no lo
+        haga.
+        """
+        if self._notificador is None:
+            return
+        try:
+            await self._notificador.enviar(result, job.delivery_id)
+        except Exception:
+            logger.warning(
+                "no se pudo notificar el despliegue de %s; el despliegue no se ve afectado",
+                job.app.name, exc_info=True,
+            )
 
     def _record(self, job: Job, result: DeployResult) -> None:
         entry = result.as_dict() | {"delivery_id": job.delivery_id, "queued_at": job.queued_at}

@@ -4,10 +4,10 @@
 * **Fecha:** 2026-08-30
 * **Decisores:** Jeremi Alcala
 * **Fase AI-DLC:** 04-testing
-* **Versión:** 0.5.0
+* **Versión:** 0.5.3
 * **Gate:** 3
 * **Alcance:** receptor (`receiver/`), ciclo de despliegue contra Docker real y verificación manual de la superficie del socket-proxy
-* **Estado de la suite:** **91 pruebas, todas en verde** — 85 rápidas (6 s, **93,47 % de cobertura de rama**) + 6 de extremo a extremo contra Docker (2 min 20 s)
+* **Estado de la suite:** **113 pruebas, todas en verde** — 107 rápidas + 6 de extremo a extremo contra Docker
 
 ## Principio
 
@@ -27,11 +27,12 @@ fue la deuda D-01, verificado solo a mano; ahora tiene pruebas contra Docker rea
 | `test_events.py` | 15 | Traducción de payloads a intención de despliegue | Unitario |
 | `test_config.py` | 15 | Arranque seguro y validación del inventario | Unitario |
 | `test_deployer.py` | 13 | Bordes del despliegue con Docker sustituido | Unitario |
-| `test_queue.py` | 9 | Serialización por app y acotación del histórico | Unitario |
+| `test_queue.py` | 12 | Serialización por app, acotación del histórico y aislamiento del canal de avisos | Unitario |
 | `test_admin.py` | 10 | `/status`, `/reload` y bordes del webhook | Integración |
+| `test_notify.py` | 19 | Cuándo avisa, qué envía y que un canal caído no rompe nada | Unitario + socket real |
 | `test_webhook.py` | 9 | Endpoint completo con el despliegue sustituido | Integración |
 | `test_rollback_e2e.py` | 6 | Ciclo real: `pull`, `up -d`, healthcheck y rollback | **Extremo a extremo** |
-| **Total** | **91** | | |
+| **Total** | **113** | | |
 
 ### Cobertura
 
