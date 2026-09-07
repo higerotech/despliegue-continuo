@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 from .config import AppConfig, ConfigError, load_apps, load_settings
 from .deployer import Deployer
 from .events import DeployIntent, IgnoredEvent, parse_event
+from .notify import Notificador
 from .queue import DeployQueue
 from .security import (
     DELIVERY_HEADER,
@@ -41,7 +42,14 @@ async def lifespan(app: FastAPI):
     app.state.settings = settings
     app.state.apps = load_apps(settings.apps_file)
     app.state.deliveries = DeliveryCache(settings.delivery_cache_size)
-    app.state.queue = DeployQueue(Deployer(settings), settings.history_size)
+    notificador = Notificador(
+        settings.notify_url, settings.notify_on, settings.notify_timeout
+    )
+    app.state.queue = DeployQueue(
+        Deployer(settings), settings.history_size, notificador
+    )
+    if not notificador.habilitado:
+        logger.info("canal de avisos desactivado (NOTIFY_URL vacia)")
 
     logger.info(
         "receptor listo en %s:%s con %d app(s): %s",

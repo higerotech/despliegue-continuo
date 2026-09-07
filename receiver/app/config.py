@@ -55,6 +55,11 @@ class Settings:
     max_body_bytes: int = 1_048_576
     delivery_cache_size: int = 1024
     history_size: int = 50
+    # Canal de avisos (DS-03). Vacio = desactivado, que es el defecto: el
+    # receptor tiene que funcionar sin depender de un servicio externo.
+    notify_url: str = ""
+    notify_on: str = "failure"
+    notify_timeout: float = 5.0
 
 
 def _env_int(env: dict[str, str], name: str, default: int) -> int:
@@ -90,6 +95,9 @@ def load_settings(env: dict[str, str] | None = None) -> Settings:
         max_body_bytes=_env_int(env, "MAX_BODY_BYTES", 1_048_576),
         delivery_cache_size=_env_int(env, "DELIVERY_CACHE_SIZE", 1024),
         history_size=_env_int(env, "HISTORY_SIZE", 50),
+        notify_url=env.get("NOTIFY_URL", "").strip(),
+        notify_on=env.get("NOTIFY_ON", "failure").strip().lower(),
+        notify_timeout=float(env.get("NOTIFY_TIMEOUT", "5") or 5),
     )
 
 

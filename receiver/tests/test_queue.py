@@ -169,3 +169,55 @@ async def test_drain_espera_a_que_terminen_los_despliegues_en_curso():
 
 async def test_drain_sin_nada_encolado_no_falla():
     await DeployQueue(DeployerEspia()).drain()
+
+
+class NotificadorEspia:
+    """Registra los avisos. Puede simular un canal caido."""
+
+    def __init__(self, revienta: bool = False) -> None:
+        self.revienta = revienta
+        self.avisos: list[tuple[str, bool, str]] = []
+
+    async def enviar(self, resultado, delivery_id=""):
+        if self.revienta:
+            raise RuntimeError("canal de avisos caido")
+        self.avisos.append((resultado.app, resultado.ok, delivery_id))
+        return True
+
+
+async def test_la_cola_notifica_el_resultado():
+    espia = NotificadorEspia()
+    cola = DeployQueue(DeployerEspia(duracion=0.01), notificador=espia)
+
+    cola.submit(hacer_app("api"), "aaa", "d-1")
+    await cola.drain()
+
+    assert espia.avisos == [("api", True, "d-1")]
+
+
+async def test_sin_notificador_la_cola_funciona_igual():
+    """El canal de avisos es opcional: sin el, nada cambia."""
+    deployer = DeployerEspia(duracion=0.01)
+    cola = DeployQueue(deployer)
+
+    cola.submit(hacer_app("api"), "aaa", "d-1")
+    await cola.drain()
+
+    assert "fin api:aaa" in deployer.eventos
+
+
+async def test_un_canal_de_avisos_caido_no_mata_al_worker():
+    """Lo critico: el aviso es observabilidad, no parte de la operacion.
+    Si notificar tumbase al worker, esa app dejaria de desplegarse en silencio."""
+    deployer = DeployerEspia(duracion=0.01)
+    cola = DeployQueue(deployer, notificador=NotificadorEspia(revienta=True))
+    app = hacer_app("api")
+
+    cola.submit(app, "aaa", "d-1")
+    cola.submit(app, "bbb", "d-2")
+    await cola.drain()
+
+    # El segundo trabajo se proceso pese a reventar el aviso del primero.
+    assert "inicio api:bbb" in deployer.eventos
+    # Y el resultado si quedo en el historico, que es la fuente de verdad.
+    assert len(cola.snapshot()["history"]) == 2

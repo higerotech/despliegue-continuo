@@ -1,10 +1,10 @@
 # Threat Model — Receptor de webhooks y cadena de despliegue
 
 * **Estado:** approved
-* **Fecha:** 2026-08-31
+* **Fecha:** 2026-09-07
 * **Decisores:** Jeremi Alcala
 * **Fase AI-DLC:** 02-design
-* **Versión:** 0.5.2
+* **Versión:** 0.5.3
 * **Gate:** 1
 * **Alcance:** receptor + ingress por túnel + socket-proxy + cadena de suministro de imágenes + estado en disco
 * **Metodología:** STRIDE + DREAD
@@ -264,7 +264,7 @@ borde se configurase mal en el futuro.
 |---|---|---|---|
 | **DS-01** | Docker rootless no implementado | T4 conserva impacto total | Evolución; requisito si cambian las condiciones de ADR-0005 |
 | **DS-02** | Sin rotación del `.jsonl` de despliegues | Disco lleno ⇒ el receptor deja de registrar | Gate 4 |
-| **DS-03** | Sin notificación del resultado del despliegue | Un fallo puede pasar inadvertido (A09) | Gate 4 |
+| ~~**DS-03**~~ | ~~Sin notificación del resultado del despliegue~~ | — | **Cerrada 2026-09-07**: aviso por webhook genérico (ADR-0009). Notifica fallos y rollbacks por defecto, e incluye `previous_tag` para decir a qué versión volvió el servicio |
 | **DS-04** | Sin procedimiento probado de rotación del secreto | T10 tarda más en cerrarse tras una sospecha | Runbook, Gate 4 |
 | ~~**DS-05**~~ | ~~Sin SBOM ni escaneo de dependencias~~ | — | **Cerrada**: `pip-audit` y SBOM CycloneDX en CI (job `sca`) |
 | **DS-06** | `health_url` es opcional | Sin ella no hay verificación real ni rollback fiable | Decisión pendiente: hacerla obligatoria en `load_apps` |
