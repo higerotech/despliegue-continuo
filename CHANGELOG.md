@@ -25,7 +25,37 @@ Gate 3 → `0.4.0`, Gate 4 → `0.5.0`, Gate 5 → `1.0.0`.
 
 ## [Unreleased]
 
+### Corregido
+
+- **El socket-proxy quedaba permanentemente roto tras cada reinicio de dockerd, en silencio.**
+  El contenedor hace bind-mount de `/var/run/docker.sock`, que es un **fichero**. Cuando dockerd
+  reinicia lo recrea con un inodo nuevo, pero el bind-mount del contenedor sigue apuntando al
+  viejo. Y con `"live-restore": true` en `daemon.json` los contenedores **sobreviven** al reinicio
+  del daemon, así que nada los recrea: HAProxy se queda sin backend y responde `503 Service
+  Unavailable` a todo, indefinidamente.
+
+  Ocurrió en midgard: dockerd reinició el 2026-09-16 a las 14:31 UTC y el proxy, arrancado a las
+  14:27, se quedó con el socket viejo. **El despliegue continuo estuvo muerto 30 horas sin que
+  nadie lo notara**, porque en ese tiempo no hubo despliegues. Se descubrió el 2026-09-17 al
+  desplegar una versión nueva: `docker compose pull fallo con codigo 1`, y detrás el 503.
+
+  Se añade `deploy/cd-socket-proxy.service`, una unidad `PartOf=docker.service` que recrea el
+  contenedor (`up -d --force-recreate`) cada vez que el daemon reinicia. `--force-recreate` es el
+  núcleo del arreglo: sin él, `up -d` ve el contenedor corriendo y no lo toca. `install.sh` pasa a
+  instalar y habilitar esa unidad en lugar de lanzar un `up -d` suelto.
+
 ### Añadido
+
+- **Healthcheck en el socket-proxy.** El fallo anterior era invisible: el contenedor figuraba `Up`
+  mientras devolvía 503 a todo. Ahora `docker ps` lo marca `unhealthy`. Docker no reinicia por su
+  cuenta un contenedor unhealthy —de recrearlo se encarga la unidad—, pero el estado deja de ser
+  mentira.
+- **`name: cd-socket-proxy` en el compose.** Sin él, un `docker compose` lanzado desde
+  `/srv/infra/socket-proxy/` deduce el nombre del proyecto del directorio (`socket-proxy`) y crea
+  uno distinto que choca contra el `container_name`: *"Conflict. The container name
+  /cd-socket-proxy is already in use"*. `install.sh` ya pasaba `-p cd-socket-proxy`, pero cualquier
+  invocación manual fallaba.
+
 
 - **Aplicación canario** (`deploy/canary/docker-compose.yml` + `config/apps.canary.yml`) para
   validar una instalación nueva. Su disparador es el propio repositorio del receptor y su

@@ -66,7 +66,16 @@ fi
 log "desplegando el socket-proxy de la API de Docker"
 install -d -o root -g root -m 0755 "$PROXY_DIR"
 install -m 0644 "$REPO_DIR/deploy/docker-socket-proxy.yml" "$PROXY_DIR/docker-compose.yml"
-docker compose -f "$PROXY_DIR/docker-compose.yml" -p cd-socket-proxy up -d
+
+# El contenedor lo gobierna una unidad de systemd, no un `up -d` suelto. Con
+# "live-restore": true los contenedores sobreviven al reinicio de dockerd, asi que nadie
+# recrea el proxy y su bind-mount se queda apuntando al inodo viejo del socket: HAProxy
+# pierde el backend y responde 503 a todo, de forma permanente y silenciosa. La unidad es
+# PartOf=docker.service y lo recrea en cada reinicio del daemon. Ver cd-socket-proxy.service.
+install -m 0644 "$REPO_DIR/deploy/cd-socket-proxy.service" /etc/systemd/system/cd-socket-proxy.service
+systemctl daemon-reload
+systemctl enable cd-socket-proxy.service
+systemctl restart cd-socket-proxy.service
 
 # El contenedor tarda un instante en aceptar conexiones: comprobar justo
 # despues de 'up -d' daba un falso negativo. Se reintenta antes de rendirse.
