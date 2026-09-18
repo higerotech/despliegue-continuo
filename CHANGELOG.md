@@ -50,6 +50,9 @@ Gate 3 → `0.4.0`, Gate 4 → `0.5.0`, Gate 5 → `1.0.0`.
   mientras devolvía 503 a todo. Ahora `docker ps` lo marca `unhealthy`. Docker no reinicia por su
   cuenta un contenedor unhealthy —de recrearlo se encarga la unidad—, pero el estado deja de ser
   mentira.
+- La `Documentation=` de `cd-receiver.service` apuntaba a `github.com/jeremialcala/despliegue-continuo`,
+  que no existe: el repositorio es `higerotech/despliegue-continuo`. Un `systemctl status cd-receiver`
+  ofrecía un enlace roto a quien fuera a diagnosticar.
 - **`name: cd-socket-proxy` en el compose.** Sin él, un `docker compose` lanzado desde
   `/srv/infra/socket-proxy/` deduce el nombre del proyecto del directorio (`socket-proxy`) y crea
   uno distinto que choca contra el `container_name`: *"Conflict. The container name
