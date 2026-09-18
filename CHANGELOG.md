@@ -27,6 +27,11 @@ Gate 3 → `0.4.0`, Gate 4 → `0.5.0`, Gate 5 → `1.0.0`.
 
 ### Corregido
 
+- La `Documentation=` de `cd-receiver.service` apuntaba a `github.com/jeremialcala/despliegue-continuo`,
+  que no existe: el repositorio es `higerotech/despliegue-continuo`. Quien hiciera
+  `systemctl status cd-receiver` para diagnosticar se encontraba un enlace roto justo cuando lo
+  necesitaba.
+
 - **El socket-proxy quedaba permanentemente roto tras cada reinicio de dockerd, en silencio.**
   El contenedor hace bind-mount de `/var/run/docker.sock`, que es un **fichero**. Cuando dockerd
   reinicia lo recrea con un inodo nuevo, pero el bind-mount del contenedor sigue apuntando al

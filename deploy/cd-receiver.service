@@ -6,7 +6,7 @@
 
 [Unit]
 Description=Receptor de webhooks de GitHub para despliegue continuo
-Documentation=https://github.com/jeremialcala/despliegue-continuo
+Documentation=https://github.com/higerotech/despliegue-continuo
 After=network-online.target docker.service
 Wants=network-online.target
 Requires=docker.service
