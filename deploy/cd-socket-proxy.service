@@ -1,0 +1,50 @@
+# /etc/systemd/system/cd-socket-proxy.service
+#
+# Gobierna el contenedor cd-socket-proxy para que se RECREE cada vez que reinicia dockerd.
+#
+# POR QUE HACE FALTA
+# El contenedor hace bind-mount de /var/run/docker.sock (un fichero). Cuando dockerd
+# reinicia, recrea ese socket con un inodo NUEVO, pero el bind-mount del contenedor sigue
+# apuntando al viejo, ya borrado. HAProxy se queda sin backend y responde 503 a todo.
+#
+# Con "live-restore": true en /etc/docker/daemon.json -que es el caso aqui- los contenedores
+# SOBREVIVEN al reinicio del daemon, asi que nada los recrea y el proxy queda roto de forma
+# permanente y silenciosa.
+#
+# Ocurrio: dockerd reinicio el 2026-09-16 a las 14:31 y el proxy, arrancado a las 14:27, se
+# quedo con el socket viejo. El despliegue continuo estuvo MUERTO 30 HORAS sin que nadie lo
+# notara, porque no hubo despliegues en ese tiempo. Se descubrio el 2026-09-17 al intentar
+# desplegar la v0.5.4: "docker compose pull fallo con codigo 1", y detras un
+# "503 Service Unavailable / No server is available to handle this request".
+#
+# PartOf=docker.service hace que systemd pare y vuelva a arrancar esta unidad cada vez que
+# docker.service se reinicia; el ExecStart recrea el contenedor y con el, el bind-mount.
+#
+[Unit]
+Description=Proxy de la API de Docker para el receptor de despliegue continuo
+Documentation=https://github.com/higerotech/despliegue-continuo
+Requires=docker.service
+After=docker.service
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/srv/infra/socket-proxy
+
+# dockerd puede tardar en aceptar peticiones aunque systemd ya lo de por activo.
+ExecStartPre=/bin/bash -c 'for i in $(seq 1 30); do /usr/bin/docker info >/dev/null 2>&1 && exit 0; sleep 2; done; echo "dockerd no respondio en 60 s" >&2; exit 1'
+
+# --force-recreate es el nucleo del arreglo: sin el, `up -d` ve el contenedor corriendo
+# (live-restore) y no lo toca, dejando el socket obsoleto montado.
+ExecStart=/usr/bin/docker compose up -d --force-recreate
+
+# El guion inicial ignora el fallo: si se llega aqui porque dockerd se esta parando, este
+# comando no puede funcionar y no debe bloquear el apagado.
+ExecStop=-/usr/bin/docker compose down --timeout 5
+
+TimeoutStartSec=180
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

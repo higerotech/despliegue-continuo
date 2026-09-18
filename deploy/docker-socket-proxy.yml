@@ -13,6 +13,13 @@
 # recorta la superficie y da un punto unico de auditoria, pero la equivalencia
 # a root solo desaparece con Docker rootless. Ver docs/02-design/threat-model.md.
 
+# El nombre del proyecto se fija a proposito. El contenedor ya llevaba la etiqueta
+# com.docker.compose.project=cd-socket-proxy, pero sin esta linea `docker compose` en este
+# directorio deduce el nombre del propio directorio ("socket-proxy") y crea un proyecto
+# DISTINTO que choca contra el container_name: "Conflict. The container name
+# /cd-socket-proxy is already in use". Con `name` cualquier invocacion apunta al mismo sitio.
+name: cd-socket-proxy
+
 services:
   docker-socket-proxy:
     image: tecnativa/docker-socket-proxy:0.3.0
@@ -65,6 +72,18 @@ services:
       SESSION: 0
       SYSTEM: 0      # sin prune ni df remoto
       EVENTS: 0
+    # Sin esto, un socket obsoleto es INVISIBLE: el contenedor figura "Up" tan feliz
+    # mientras HAProxy responde 503 a todo. Es lo que dejo el despliegue continuo muerto
+    # 30 h sin que nadie lo notara. Ahora `docker ps` lo marca unhealthy.
+    # Docker no reinicia por si solo un contenedor unhealthy; de recrearlo se encarga
+    # cd-socket-proxy.service cuando dockerd reinicia.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:2375/_ping >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
     logging:
       driver: json-file
       options:
