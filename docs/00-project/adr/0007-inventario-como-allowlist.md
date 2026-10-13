@@ -6,7 +6,7 @@
 * **Fase AI-DLC:** 02-design
 * **Versión:** 1.0.0
 * **ID:** ADR-0007
-* **Supersede / Superseded-by:** —
+* **Supersede / Superseded-by:** enmendada por ADR-0010 (el inventario se indexa por `name` y un repo puede declarar varias apps)
 * **Controles OWASP afectados:** A01 (control de acceso), A05 (inyección), A06 (diseño inseguro)
 
 ## Contexto

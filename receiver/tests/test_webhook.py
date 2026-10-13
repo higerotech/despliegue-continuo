@@ -7,6 +7,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
+from app.config import load_apps
 from app.main import app as fastapi_app
 from app.security import compute_signature
 
@@ -116,6 +117,60 @@ def test_ignora_lo_que_no_esta_declarado(client, payload_kwargs):
     assert response.status_code == 202
     assert response.json()["status"] == "ignored"
     assert fastapi_app.state.queue.submitted == []
+
+
+APPS_MONOREPO_YML = APPS_YML + """
+  - name: mono-api
+    repo: higerotech/monorepo
+    project_dir: /srv/apps/mono-api
+    image: ghcr.io/higerotech/monorepo/api
+    workflow: build-api
+  - name: mono-web
+    repo: higerotech/monorepo
+    project_dir: /srv/apps/mono-web
+    image: ghcr.io/higerotech/monorepo/web
+    workflow: build-web
+"""
+
+
+@pytest.fixture
+def client_monorepo(client, tmp_path):
+    """El mismo receptor, con un repo que declara dos apps (ADR-0010)."""
+    apps_file = tmp_path / "apps.yml"
+    apps_file.write_text(APPS_MONOREPO_YML, encoding="utf-8")
+    fastapi_app.state.apps = load_apps(apps_file)
+    return client
+
+
+@pytest.mark.parametrize(
+    ("workflow", "app"),
+    [("build-api", "mono-api"), ("build-web", "mono-web")],
+)
+def test_en_un_repo_con_varias_apps_el_workflow_elige_cual(client_monorepo, workflow, app):
+    payload = success_payload(workflow=workflow, repo="Higerotech/Monorepo")
+    response = post(client_monorepo, payload)
+    assert response.json()["status"] == "queued"
+    assert response.json()["app"] == app
+    assert fastapi_app.state.queue.submitted == [(app, SHA)]
+
+
+def test_en_un_repo_con_varias_apps_un_workflow_ajeno_no_despliega_ninguna(client_monorepo):
+    # Los tests o el lint del monorepo tambien emiten workflow_run en verde.
+    response = post(client_monorepo, success_payload(workflow="ci", repo="higerotech/monorepo"))
+    assert response.json()["status"] == "ignored"
+    assert "no corresponde a ninguna app" in response.json()["reason"]
+    assert fastapi_app.state.queue.submitted == []
+
+
+def test_varias_apps_en_un_repo_no_relajan_la_rama(client_monorepo):
+    payload = success_payload(branch="develop", workflow="build-api", repo="higerotech/monorepo")
+    response = post(client_monorepo, payload)
+    assert response.json()["status"] == "ignored"
+    assert fastapi_app.state.queue.submitted == []
+
+
+def test_la_app_unica_de_un_repo_no_cambia_con_el_inventario_ampliado(client_monorepo):
+    assert post(client_monorepo, success_payload()).json()["app"] == "mi-api"
 
 
 def test_la_reentrega_del_mismo_delivery_no_despliega_dos_veces(client):

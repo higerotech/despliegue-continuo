@@ -74,9 +74,24 @@ def _skip(reason: str, **extra) -> JSONResponse:
 
 def _match_app(apps: dict[str, AppConfig], intent: DeployIntent) -> AppConfig | str:
     """Devuelve la app a desplegar o un texto explicando por que no aplica."""
-    target = apps.get(intent.repo)
-    if target is None:
+    candidates = [app for app in apps.values() if app.repo == intent.repo]
+    if not candidates:
         return f"el repo {intent.repo} no esta en el inventario de apps"
+
+    if len(candidates) == 1:
+        target = candidates[0]
+    else:
+        # Varias apps en el repo (ADR-0010): el nombre del workflow elige cual.
+        # `load_apps` garantiza que son todas workflow_run con workflow propio,
+        # asi que la coincidencia es exacta y como mucho una.
+        target = next((app for app in candidates if app.workflow == intent.workflow), None)
+        if target is None:
+            expected = ", ".join(sorted(repr(app.workflow) for app in candidates))
+            return (
+                f"workflow {intent.workflow!r} no corresponde a ninguna app de "
+                f"{intent.repo} (esperados: {expected})"
+            )
+
     if target.event != intent.event:
         return f"{target.name} escucha {target.event!r}, no {intent.event!r}"
     if intent.branch != target.branch:
