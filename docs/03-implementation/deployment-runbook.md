@@ -150,6 +150,27 @@ journalctl -u cd-receiver -n 5 | grep -i avisos   # confirma si quedo activo
 Para comprobarlo sin esperar a un fallo real, apunta `NOTIFY_URL` a un receptor de prueba y
 despliega un tag inexistente: el `pull` fallará y el aviso saldrá.
 
+### Con ntfy hace falta una plantilla en la URL
+
+Slack y Discord leen el campo `text` o `content` del JSON. **ntfy no**: si recibe un JSON en la
+URL de un tema, publica el JSON entero como texto del mensaje. Para que saque el resumen hay que
+pedirle que trate el cuerpo como plantilla, con parámetros en la propia URL:
+
+```
+NOTIFY_URL=https://ntfy.sh/<tema>?tpl=1&p=high&tags=warning&t=Despliegue+{{.app}}+en+{{.host}}&m={{.text}}
+```
+
+- `tpl=1` activa la plantilla; `m` y `t` son el mensaje y el título, y pueden usar cualquier
+  campo del cuerpo (`.app`, `.host`, `.tag`, `.previous_tag`, `.text`).
+- `p=high` es fijo, y tiene sentido porque por defecto solo se avisan fallos y rollbacks.
+- Las llaves van tal cual en `receiver.env`: systemd no las interpreta y el receptor las
+  codifica al enviar.
+- **El tema es la credencial.** Quien lo conozca lee los avisos; por eso vive en
+  `receiver.env`, que solo lee root.
+
+Verificado el 2026-10-14 contra ntfy.sh con un webhook firmado que pedía un tag inexistente:
+el `pull` falló, el receptor revirtió y llegó el aviso con título y mensaje legibles.
+
 ## Diagnóstico: el despliegue se encoló pero falló
 
 **El resultado del despliegue no vuelve a GitHub** (ADR-0008): la entrega figura correcta

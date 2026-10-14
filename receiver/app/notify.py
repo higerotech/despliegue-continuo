@@ -14,8 +14,10 @@ Tres decisiones que dan forma a este modulo:
    observabilidad, no parte de la operacion: si el canal esta caido se registra
    un warning y se sigue.
 3. **El destino es un webhook generico.** El cuerpo lleva `text` y `content`
-   ademas de los campos estructurados, que es lo que esperan Slack, Discord,
-   ntfy y la mayoria de relays, de modo que funciona sin adaptadores.
+   ademas de los campos estructurados, que es lo que esperan Slack, Discord y
+   la mayoria de relays, de modo que funciona sin adaptadores. ntfy es la
+   excepcion: publica el JSON entero salvo que la URL le pida tratarlo como
+   plantilla (`?tpl=1&m={{.text}}`, ver el runbook).
 """
 
 from __future__ import annotations
@@ -78,8 +80,9 @@ class Notificador:
     def _cuerpo(self, resultado: DeployResult, delivery_id: str) -> dict:
         texto = self.resumen(resultado)
         return {
-            # `text` lo entienden Slack y ntfy; `content`, Discord. Llevar ambos
-            # evita necesitar un adaptador por destino.
+            # `text` lo entiende Slack; `content`, Discord. Llevar ambos evita
+            # necesitar un adaptador por destino. ntfy lo lee con una plantilla
+            # en la URL.
             "text": texto,
             "content": texto,
             "host": self._host,
