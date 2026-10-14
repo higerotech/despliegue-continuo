@@ -36,6 +36,11 @@ Gate 3 → `0.4.0`, Gate 4 → `0.5.0`, Gate 5 → `1.0.0`.
 
 ### Corregido
 
+- **La documentación decía que ntfy entiende el campo `text` del aviso, y no es así.** Con la
+  URL de un tema a secas, ntfy publica el JSON entero como mensaje. El runbook explica ahora la
+  plantilla que hace falta en `NOTIFY_URL`, verificada contra ntfy.sh con un despliegue fallido
+  de verdad. El código no cambia.
+
 - La `Documentation=` de `cd-receiver.service` apuntaba a `github.com/jeremialcala/despliegue-continuo`,
   que no existe: el repositorio es `higerotech/despliegue-continuo`. Quien hiciera
   `systemctl status cd-receiver` para diagnosticar se encontraba un enlace roto justo cuando lo
