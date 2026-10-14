@@ -98,6 +98,10 @@ Al ser publicos los paquetes de GHCR, el `pull` es anonimo y **no hace falta
 privada, habria que autenticar el daemon (no el usuario `deploy`, que ya no
 habla directamente con Docker).
 
+Un repositorio puede declarar varias apps, una por servicio, siempre que cada
+una nombre un workflow de build distinto (ADR-0010): solo se redespliega el
+servicio cuyo workflow termino.
+
 Declara la app en `/etc/cd-receiver/apps.yml` y recarga sin reiniciar:
 
 ```bash

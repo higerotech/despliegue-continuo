@@ -106,9 +106,15 @@ _ALLOWED_EVENTS = ("push", "workflow_run")
 
 
 def load_apps(path: Path) -> dict[str, AppConfig]:
-    """Lee apps.yml y devuelve las apps indexadas por `repo` en minusculas.
+    """Lee apps.yml y devuelve las apps indexadas por `name`.
 
     Solo se despliega lo que aparece aqui: el inventario ES la allowlist.
+
+    Un repositorio puede declarar varias apps (ADR-0010), pero un evento nunca
+    puede corresponder a mas de una: si comparten repo, todas escuchan
+    `workflow_run` y cada una nombra un workflow distinto. Se comprueba al
+    cargar y no al recibir el webhook, para que un inventario ambiguo impida
+    arrancar en vez de desplegar la app equivocada.
     """
     if not path.exists():
         raise ConfigError(f"No existe el inventario de apps: {path}")
@@ -149,8 +155,37 @@ def load_apps(path: Path) -> dict[str, AppConfig]:
             rollback=bool(entry.get("rollback", True)),
             command_timeout=int(entry.get("command_timeout", 600)),
         )
-        if app.repo in apps:
-            raise ConfigError(f"El repo {app.repo} esta declarado dos veces en {path}.")
-        apps[app.repo] = app
+        # `name` es el proyecto compose, el fichero de estado y la cola: dos
+        # apps con el mismo nombre se pisarian las tres cosas.
+        if app.name in apps:
+            raise ConfigError(f"La app {app.name} esta declarada dos veces en {path}.")
+        apps[app.name] = app
 
+    _check_one_app_per_event(apps, path)
     return apps
+
+
+def _check_one_app_per_event(apps: dict[str, AppConfig], path: Path) -> None:
+    """Falla si un mismo evento de un repo pudiera corresponder a dos apps."""
+    by_repo: dict[str, list[AppConfig]] = {}
+    for app in apps.values():
+        by_repo.setdefault(app.repo, []).append(app)
+
+    for repo, group in by_repo.items():
+        if len(group) == 1:
+            continue
+        names = ", ".join(sorted(app.name for app in group))
+        # Una app `push`, o una `workflow_run` sin `workflow`, acepta cualquier
+        # evento de su tipo: junto a otra app del mismo repo seria ambigua.
+        if any(app.event != "workflow_run" or not app.workflow for app in group):
+            raise ConfigError(
+                f"El repo {repo} declara varias apps ({names}) en {path}: todas deben "
+                "usar event workflow_run y definir `workflow`."
+            )
+        workflows = [str(app.workflow) for app in group]
+        repeated = sorted({w for w in workflows if workflows.count(w) > 1})
+        if repeated:
+            raise ConfigError(
+                f"El repo {repo} declara el workflow {', '.join(repeated)} dos veces "
+                f"en {path}: cada app del repo necesita un workflow distinto."
+            )

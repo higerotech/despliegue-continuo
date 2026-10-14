@@ -25,6 +25,15 @@ Gate 3 → `0.4.0`, Gate 4 → `0.5.0`, Gate 5 → `1.0.0`.
 
 ## [Unreleased]
 
+### Añadido
+
+- **Un repositorio puede declarar varias apps** (ADR-0010). El inventario se indexaba por
+  `repo` y rechazaba un repo repetido, así que un monorepo con seis servicios solo podía
+  desplegar uno. Ahora se indexa por `name`, y cuando un repo declara varias apps el nombre del
+  workflow elige cuál se despliega. Las condiciones —todas `workflow_run`, todas con
+  `workflow`, ninguno repetido— se comprueban al cargar: un inventario ambiguo no arranca ni
+  se recarga. Para un repo con una sola app no cambia nada.
+
 ### Corregido
 
 - La `Documentation=` de `cd-receiver.service` apuntaba a `github.com/jeremialcala/despliegue-continuo`,

@@ -21,7 +21,23 @@ apps:
     rollback: true                            # al fallar el health, vuelve al tag anterior
     command_timeout: 600
 
-  # Segundo ejemplo: despliegue directo por push, sin build previa en Actions.
+  # Monorepo: varias apps del MISMO repo (ADR-0010). Cada una con su workflow
+  # de build, su directorio y su imagen. Todas deben usar workflow_run y
+  # nombrar un workflow distinto: es lo que decide cual se despliega.
+  # - name: tienda-api
+  #   repo: higerotech/tienda
+  #   workflow: build-api
+  #   project_dir: /srv/apps/tienda-api
+  #   image: ghcr.io/higerotech/tienda/api
+  #   health_url: http://127.0.0.1:8082/health
+  # - name: tienda-worker
+  #   repo: higerotech/tienda
+  #   workflow: build-worker
+  #   project_dir: /srv/apps/tienda-worker
+  #   image: ghcr.io/higerotech/tienda/worker
+  #   # sin health_url: no expone HTTP, asi que no hay verificacion ni rollback
+
+  # Otro ejemplo: despliegue directo por push, sin build previa en Actions.
   # Util para un sitio estatico o una app que se construye en el propio servidor.
   # - name: web
   #   repo: higerotech/web

@@ -122,6 +122,7 @@ components:
             - "rama 'develop' distinta de la desplegable ('main')"
             - "workflow_run conclusion='failure'"
             - "el repo owner/otro no esta en el inventario de apps"
+            - "workflow 'ci' no corresponde a ninguna app de owner/monorepo (esperados: 'build-api', 'build-web')"
             - "delivery 7f3a... ya procesado"
     Status:
       type: object
@@ -182,13 +183,13 @@ Fichero en `/etc/cd-receiver/apps.yml`, `0640 root:deploy`, **no versionado** (A
 
 | Campo | Tipo | Obligatorio | Defecto | Significado |
 |---|---|---|---|---|
-| `name` | string | **sí** | — | Identificador y nombre del proyecto compose |
+| `name` | string | **sí** | — | Identificador único: proyecto compose, fichero de estado y cola |
 | `repo` | string | **sí** | — | `owner/repo`; se normaliza a minúsculas |
 | `project_dir` | ruta | **sí** | — | Directorio del `docker-compose.yml` en el servidor |
 | `image` | string | **sí** | — | Imagen; se expone como `$IMAGE`. Informativo |
 | `branch` | string | no | `main` | Única rama desplegable |
 | `event` | enum | no | `workflow_run` | `workflow_run` \| `push` |
-| `workflow` | string | no | — | Nombre del workflow que debe haber pasado |
+| `workflow` | string | no¹ | — | Nombre del workflow que debe haber pasado |
 | `compose_file` | string | no | `docker-compose.yml` | Relativo a `project_dir` |
 | `tag_template` | string | no | `sha-{short_sha}` | Admite `{sha}` y `{short_sha}` |
 | `services` | lista | no | `[]` | Vacío = `pull` de todos los servicios |
@@ -198,9 +199,15 @@ Fichero en `/etc/cd-receiver/apps.yml`, `0640 root:deploy`, **no versionado** (A
 | `rollback` | bool | no | `true` | Restaurar el tag anterior al fallar |
 | `command_timeout` | int (s) | no | `600` | Límite por comando de `docker compose` |
 
-**Invariantes que el cargador impone** (`config.load_apps`): un repo no puede aparecer dos
+¹ Obligatorio cuando el repo declara más de una app (ADR-0010).
+
+**Invariantes que el cargador impone** (`config.load_apps`): un `name` no puede aparecer dos
 veces; `event` solo admite los dos valores; si falta un campo obligatorio el arranque falla en
 lugar de degradarse.
+
+**Varias apps en un mismo repo** (ADR-0010): todas usan `event: workflow_run`, todas definen
+`workflow` y ninguna lo repite. Así un evento corresponde como mucho a una app, y el nombre del
+workflow elige cuál. Un inventario que no lo cumpla no carga.
 
 ## 3. Contrato con el repositorio de cada aplicación
 
