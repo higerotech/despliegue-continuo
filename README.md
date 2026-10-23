@@ -102,6 +102,11 @@ Un repositorio puede declarar varias apps, una por servicio, siempre que cada
 una nombre un workflow de build distinto (ADR-0010): solo se redespliega el
 servicio cuyo workflow termino.
 
+GitHub **no reintenta** un webhook que no llegó. Si el túnel o la red fallan justo cuando
+termina un build, ese despliegue se pierde. El reconciliador (ADR-0011) lo recupera:
+actívalo con `RECONCILE_INTERVAL=300` en `receiver.env`, primero con
+`RECONCILE_DRY_RUN=true`, y añade `RECONCILE_TOKEN` si algún repo es privado.
+
 Declara la app en `/etc/cd-receiver/apps.yml` y recarga sin reiniciar:
 
 ```bash

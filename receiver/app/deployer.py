@@ -237,7 +237,32 @@ class Deployer:
             return f"{exc}\n{_tail(exc.output)}"
         return f"{type(exc).__name__}: {exc}"
 
+    def _log_file(self, app_name: str) -> Path:
+        return self._settings.log_dir / f"{app_name}.jsonl"
+
     def _append_log(self, result: DeployResult) -> None:
-        path = self._settings.log_dir / f"{result.app}.jsonl"
-        with path.open("a", encoding="utf-8") as handle:
+        with self._log_file(result.app).open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(result.as_dict(), ensure_ascii=False) + "\n")
+
+    def attempted_shas(self, app: AppConfig, last: int = 500) -> set[str]:
+        """Commits que ya se intentaron desplegar, salieran bien o mal.
+
+        El reconciliador (ADR-0011) no toca nada de esta lista: un fallo con
+        rollback ya se decidio y se aviso, y repetirlo cada ciclo seria un
+        bucle de rollbacks. Se lee del historico en disco, no de la memoria,
+        porque tiene que sobrevivir a los reinicios del servicio.
+        """
+        path = self._log_file(app.name)
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()[-last:]
+        except OSError:
+            return set()
+        shas: set[str] = set()
+        for line in lines:
+            try:
+                sha = json.loads(line).get("sha")
+            except (json.JSONDecodeError, AttributeError):
+                continue
+            if sha:
+                shas.add(str(sha))
+        return shas

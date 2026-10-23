@@ -86,6 +86,7 @@ correcto que ocurra, pero significa que algo salió mal.*
 | **RF06** | Cuando un evento legítimo no dispara despliegue, la respuesta indica el motivo concreto | `test_webhook.py::test_ignora_lo_que_no_esta_declarado` (verifica el cuerpo) |
 | **RF07** | El inventario se recarga sin reiniciar el servicio ni interrumpir despliegues en curso | Verificado en humo: `POST /reload` → `{"status":"reloaded"}` |
 | **RF08** | El operador puede consultar qué versión corre, qué hay en cola y el histórico reciente | Verificado en humo: `GET /status` |
+| **RF09** | Un build correcto cuyo webhook no llegó se despliega igualmente, sin repetir nunca un commit que el receptor ya intentó (ADR-0011) | `test_reconcile.py::TestPlanificar` (una prueba por regla) |
 
 ## Requisitos no funcionales
 
@@ -106,6 +107,7 @@ correcto que ocurra, pero significa que algo salió mal.*
 | **RS04** | El proceso que despliega no dispone de acceso irrestricto al daemon de Docker | A01, A06 | ADR-0005; verificado: `exec` y `system` devuelven `403` |
 | **RS05** | Ningún secreto ni dato específico de la instalación llega al repositorio | A02 | `git ls-files` no lista `.env` ni `config/apps.yml` |
 | **RS06** | Los endpoints de administración no son alcanzables desde Internet | A01 | Filtro por ruta en el túnel + guardia loopback/token en `main._authorized` |
+| **RS07** | El reconciliador no acepta nada que el webhook rechazaría, y su token es de solo lectura y no se publica | A01, A08 | `test_reconcile.py::test_ignora_runs_que_no_son_el_build_de_la_app`, `test_el_token_no_aparece_en_el_estado_publicado` |
 
 ## Trazabilidad requisito → control → prueba
 

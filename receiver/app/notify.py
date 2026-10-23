@@ -110,6 +110,9 @@ class Notificador:
                     respuesta.status_code, resultado.app,
                 )
                 return False
+            # Sin la URL: puede llevar el tema de ntfy o un token de Slack, y
+            # el log de httpx que la imprimia se silencia en main.py.
+            logger.info("aviso enviado: %s (HTTP %s)", resultado.app, respuesta.status_code)
             return True
         except Exception as exc:
             # Deliberadamente amplio: ni un DNS roto ni un TLS invalido pueden

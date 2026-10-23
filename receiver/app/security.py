@@ -44,8 +44,10 @@ def verify_signature(secret: str, body: bytes, header: str | None) -> None:
 class DeliveryCache:
     """Recuerda los ultimos delivery IDs para ignorar reentregas de GitHub.
 
-    GitHub reintenta las entregas fallidas y el operador puede reenviarlas a
-    mano desde la UI. Sin esto, un reintento vuelve a desplegar.
+    El operador puede reenviar una entrega a mano desde la UI de GitHub
+    (*Redeliver*). Sin esto, ese reenvio vuelve a desplegar. GitHub, en
+    cambio, NO reintenta por su cuenta una entrega fallida: de recuperar las
+    perdidas se encarga el reconciliador (ADR-0011).
     """
 
     def __init__(self, capacity: int = 1024) -> None:

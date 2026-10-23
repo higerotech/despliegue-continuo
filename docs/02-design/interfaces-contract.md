@@ -144,6 +144,32 @@ components:
           type: array
           description: Ultimos despliegues (HISTORY_SIZE, 50 por defecto)
           items: { $ref: "#/components/schemas/DeployResult" }
+        reconciliacion:
+          type: object
+          description: >
+            Ultima pasada del reconciliador (ADR-0011). Con RECONCILE_INTERVAL=0
+            solo trae activo=false. El token nunca aparece; con_token dice si hay.
+          properties:
+            activo:      { type: boolean }
+            modo:        { type: string, enum: [observar, desplegar] }
+            intervalo:   { type: integer }
+            gracia:      { type: integer }
+            con_token:   { type: boolean }
+            recuperados: { type: integer, description: Encolados desde el arranque }
+            ciclo:       { type: string, format: date-time }
+            decisiones:
+              type: array
+              items:
+                type: object
+                properties:
+                  app:    { type: string }
+                  accion: { type: string, enum: [desplegar, al dia, omitir] }
+                  motivo: { type: string }
+                  sha:    { type: [string, "null"] }
+                  run_id: { type: [integer, "null"] }
+            errores:
+              type: object
+              description: Por "repo@rama", el error de la ultima consulta
     DeployResult:
       type: object
       properties:
@@ -171,7 +197,7 @@ components:
 | Código | Cuándo | Por qué ese código |
 |---|---|---|
 | `202 queued` | El despliegue se encoló | GitHub exige respuesta rápida; el trabajo es asíncrono (ADR-0008) |
-| `202 ignored` | Evento legítimo que no debe desplegar | **No es un error.** Un `4xx` haría que GitHub reintentase y marcase el webhook como defectuoso |
+| `202 ignored` | Evento legítimo que no debe desplegar | **No es un error.** Un `4xx` marcaría la entrega como fallida en *Recent Deliveries* y escondería los fallos reales. GitHub **no** reintenta nunca: de las entregas perdidas se encarga el reconciliador (ADR-0011) |
 | `400` | El cuerpo no es JSON válido | Solo se llega aquí con firma válida: indica un problema real, no un ataque |
 | `401` | Firma ausente, malformada o incorrecta | Único código que denota hostilidad; se registra con `WARNING` |
 | `413` | Cuerpo por encima del límite | Se comprueba **antes** de firmar o parsear |

@@ -67,7 +67,8 @@ es alcanzar un daemon que corre como root.*
 | **Emparejamiento con el inventario** | **T5**: desplegar un repositorio no declarado | Manipular `apps.yml` si se tiene acceso al host | — | Rutas internas y endpoints de salud | — | — |
 | **Endpoints de administración** | — | **T7**: `/reload` releería el inventario | — | **T7**/**T13**: `/status` revela inventario, rutas internas e histórico | T13: recargas repetidas | — |
 | **Secreto y credenciales** | **T10**: quien tiene el secreto **es** GitHub para el sistema | — | — | **T10**: fuga por logs, backup o repositorio | — | T10 ⇒ despliegue arbitrario |
-| **Túnel** | **T8**: con el token del túnel se publica otro origen | — | — | — | Caída ⇒ sin despliegues | — |
+| **Túnel** | **T8**: con el token del túnel se publica otro origen | — | — | — | Caída ⇒ despliegues retrasados hasta el siguiente ciclo del reconciliador (ADR-0011) | — |
+| **Reconciliador** (receptor → API de GitHub) | **T14**: respuesta suplantada de la API | — | — | **T14**: fuga del token de lectura | API caída o límite agotado ⇒ sin recuperación, el webhook sigue funcionando | — |
 | **Cadena de suministro** (GHCR, PyPI) | Imagen suplantada en el registro | **T6**: desplegar una build no verificada | — | — | — | Dependencia comprometida ⇒ T4 |
 | **Puertos del host** | — | — | — | — | **T3**: escaneo y ataque directo | — |
 | **Cola de despliegues** | — | **T9**: despliegues solapados dejan estado inconsistente | — | — | — | — |
@@ -92,6 +93,7 @@ Cada dimensión de 1 a 5; puntuación = media. **≥ 4,0 crítica · 3,0–3,9 a
 | **T12** | Agotamiento de recursos | 2 | 4 | 3 | 2 | 1 | **2,4** | Media | Límite de 1 MiB antes de parsear; `command_timeout`; cola acotada |
 | **T11** | Replay de una entrega | 2 | 3 | 2 | 2 | 2 | **2,2** | Media | Caché LRU de 1024 `X-GitHub-Delivery`; además el redespliegue es idempotente |
 | **T3** | Ataque directo a puertos | 4 | 1 | 1 | 4 | 1 | **2,2** | Media | ADR-0004: nada escucha en interfaz pública; `BIND_HOST=127.0.0.1` probado |
+| **T14** | Abuso del reconciliador: token filtrado o API suplantada | 2 | 2 | 1 | 2 | 2 | **1,8** | Baja | ADR-0011: token *fine-grained* con solo `Actions: read`, `0600` y fuera de `/status`; TLS contra `api.github.com`; el run pasa el mismo filtro que un webhook y solo puede desplegar el build de un workflow ya declarado |
 
 ```mermaid
 quadrantChart
@@ -115,6 +117,7 @@ quadrantChart
     "T12 agotamiento": [0.25, 0.28]
     "T11 replay": [0.15, 0.20]
     "T3 ataque a puertos": [0.05, 0.72]
+    "T14 abuso del reconciliador": [0.06, 0.30]
 ```
 
 *Eje trazabilidad — fase 02-design. Comparar con el cuadrante del PRD: los controles desplazan
@@ -257,6 +260,8 @@ borde se configurase mal en el futuro.
 | El webhook sí es alcanzable desde Internet | `401 firma invalida` sin firma: la petición llega y se rechaza por el control correcto |
 | `deploy` fuera del grupo `docker` en el servidor real | `id -nG deploy` devuelve solo `deploy` |
 | Nada escuchando en interfaz pública | `ss -ltn`: `9000` y `2375` solo en `127.0.0.1` |
+| El reconciliador usa el mismo filtro que el webhook | `test_reconcile.py`: otro workflow, build fallida, otra rama, `pull_request` y fork se descartan |
+| El token del reconciliador no se publica | `test_reconcile.py::test_el_token_no_aparece_en_el_estado_publicado` |
 
 ## Deuda de seguridad reconocida
 
