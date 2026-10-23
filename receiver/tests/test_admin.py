@@ -184,3 +184,22 @@ class TestBordesDelWebhook:
         assert respuesta.json()["status"] == "ignored"
         assert "escucha" in respuesta.json()["reason"]
         assert fastapi_app.state.queue.submitted == []
+
+
+class TestReconciliacionEnStatus:
+    """ADR-0011: el operador ve que decidio el reconciliador sin leer el journal."""
+
+    def test_desactivado_por_defecto(self, client_con_token):
+        cuerpo = client_con_token.get("/status", headers=AUTORIZADO).json()
+        assert cuerpo["reconciliacion"] == {"activo": False}
+
+    def test_activo_publica_modo_e_intervalo_y_se_apaga_limpio(self, tmp_path, monkeypatch):
+        montar(
+            tmp_path, monkeypatch, STATUS_TOKEN=TOKEN,
+            RECONCILE_INTERVAL="300", RECONCILE_DRY_RUN="true",
+        )
+        with TestClient(fastapi_app) as c:
+            cuerpo = c.get("/status", headers=AUTORIZADO).json()
+        assert cuerpo["reconciliacion"]["activo"] is True
+        assert cuerpo["reconciliacion"]["modo"] == "observar"
+        assert cuerpo["reconciliacion"]["intervalo"] == 300

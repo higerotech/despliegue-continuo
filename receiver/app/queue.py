@@ -43,7 +43,15 @@ class DeployQueue:
         self._queues: dict[str, asyncio.Queue[Job]] = {}
         self._workers: dict[str, asyncio.Task] = {}
         self._running: dict[str, Job] = {}
+        self._waiting: dict[str, list[str]] = {}
         self._history: deque[dict] = deque(maxlen=history_size)
+
+    def contains(self, app_name: str, sha: str) -> bool:
+        """True si ese commit de esa app esta en curso o esperando turno."""
+        running = self._running.get(app_name)
+        if running is not None and running.sha == sha:
+            return True
+        return sha in self._waiting.get(app_name, [])
 
     def submit(self, app: AppConfig, sha: str, delivery_id: str) -> int:
         """Encola un despliegue y devuelve cuantos hay por delante de este."""
@@ -62,12 +70,14 @@ class DeployQueue:
             queued_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
         )
         queue.put_nowait(job)
+        self._waiting.setdefault(app.name, []).append(sha)
         logger.info("encolado %s -> %s (delivery %s)", app.name, sha[:7], delivery_id)
         return queue.qsize()
 
     async def _worker(self, name: str, queue: asyncio.Queue[Job]) -> None:
         while True:
             job = await queue.get()
+            self._waiting[name].remove(job.sha)
             self._running[name] = job
             try:
                 result = await self._deployer.deploy(job.app, job.sha)

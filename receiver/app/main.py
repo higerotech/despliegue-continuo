@@ -6,6 +6,7 @@ Solo /webhook esta pensado para exponerse a traves del tunel. /status y
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -15,9 +16,10 @@ from fastapi.responses import JSONResponse
 
 from .config import AppConfig, ConfigError, load_apps, load_settings
 from .deployer import Deployer
-from .events import DeployIntent, IgnoredEvent, parse_event
+from .events import IgnoredEvent, match_app, parse_event
 from .notify import Notificador
 from .queue import DeployQueue
+from .reconcile import Reconciliador
 from .security import (
     DELIVERY_HEADER,
     EVENT_HEADER,
@@ -32,6 +34,10 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
 )
 logger = logging.getLogger("cd.receiver")
+# httpx registra cada peticion con su URL completa en INFO. Con el reconciliador
+# serian cientos de lineas al dia, y la URL del canal de avisos puede llevar un
+# secreto (el tema de ntfy, el token de un webhook de Slack).
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 
@@ -45,11 +51,39 @@ async def lifespan(app: FastAPI):
     notificador = Notificador(
         settings.notify_url, settings.notify_on, settings.notify_timeout
     )
-    app.state.queue = DeployQueue(
-        Deployer(settings), settings.history_size, notificador
-    )
+    deployer = Deployer(settings)
+    app.state.queue = DeployQueue(deployer, settings.history_size, notificador)
     if not notificador.habilitado:
         logger.info("canal de avisos desactivado (NOTIFY_URL vacia)")
+
+    app.state.reconciliador = None
+    tarea_reconciliacion = None
+    if settings.reconcile_interval:
+        # Lee el inventario y la cola de app.state en cada ciclo, no una copia
+        # tomada al arrancar: asi ve el inventario que deje cada /reload.
+        reconciliador = Reconciliador(
+            settings,
+            apps=lambda: app.state.apps,
+            deployer=deployer,
+            queue=_ColaVigente(app),
+        )
+        app.state.reconciliador = reconciliador
+        tarea_reconciliacion = asyncio.create_task(
+            reconciliador.bucle(), name="reconciliador"
+        )
+        logger.info(
+            "reconciliador activo: cada %ss, modo %s, %s token",
+            settings.reconcile_interval, reconciliador.modo,
+            "con" if settings.reconcile_token else "sin",
+        )
+        if not settings.reconcile_token and reconciliador.consultas_por_hora() > 50:
+            logger.warning(
+                "sin RECONCILE_TOKEN el limite es de 60 consultas/h y esta "
+                "configuracion hace %.0f: sube RECONCILE_INTERVAL o define un token",
+                reconciliador.consultas_por_hora(),
+            )
+    else:
+        logger.info("reconciliador desactivado (RECONCILE_INTERVAL=0)")
 
     logger.info(
         "receptor listo en %s:%s con %d app(s): %s",
@@ -59,8 +93,25 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        # Primero el reconciliador: que no encole nada mientras se vacia la cola.
+        if tarea_reconciliacion is not None:
+            tarea_reconciliacion.cancel()
+            await asyncio.gather(tarea_reconciliacion, return_exceptions=True)
         await app.state.queue.drain()
         logger.info("receptor detenido")
+
+
+class _ColaVigente:
+    """Delega en la cola que haya en app.state en cada momento."""
+
+    def __init__(self, fastapi_app: FastAPI) -> None:
+        self._app = fastapi_app
+
+    def contains(self, app_name: str, sha: str) -> bool:
+        return self._app.state.queue.contains(app_name, sha)
+
+    def submit(self, target: AppConfig, sha: str, delivery_id: str) -> int:
+        return self._app.state.queue.submit(target, sha, delivery_id)
 
 
 app = FastAPI(title="CD Receiver", version="1.0.0", lifespan=lifespan, docs_url=None, redoc_url=None)
@@ -70,35 +121,6 @@ def _skip(reason: str, **extra) -> JSONResponse:
     """202 con motivo: GitHub lo muestra en Recent Deliveries y ahorra depuracion."""
     logger.info("ignorado: %s", reason)
     return JSONResponse({"status": "ignored", "reason": reason, **extra}, status_code=202)
-
-
-def _match_app(apps: dict[str, AppConfig], intent: DeployIntent) -> AppConfig | str:
-    """Devuelve la app a desplegar o un texto explicando por que no aplica."""
-    candidates = [app for app in apps.values() if app.repo == intent.repo]
-    if not candidates:
-        return f"el repo {intent.repo} no esta en el inventario de apps"
-
-    if len(candidates) == 1:
-        target = candidates[0]
-    else:
-        # Varias apps en el repo (ADR-0010): el nombre del workflow elige cual.
-        # `load_apps` garantiza que son todas workflow_run con workflow propio,
-        # asi que la coincidencia es exacta y como mucho una.
-        target = next((app for app in candidates if app.workflow == intent.workflow), None)
-        if target is None:
-            expected = ", ".join(sorted(repr(app.workflow) for app in candidates))
-            return (
-                f"workflow {intent.workflow!r} no corresponde a ninguna app de "
-                f"{intent.repo} (esperados: {expected})"
-            )
-
-    if target.event != intent.event:
-        return f"{target.name} escucha {target.event!r}, no {intent.event!r}"
-    if intent.branch != target.branch:
-        return f"rama {intent.branch!r} distinta de la desplegable ({target.branch!r})"
-    if target.workflow and intent.workflow != target.workflow:
-        return f"workflow {intent.workflow!r} distinto del esperado ({target.workflow!r})"
-    return target
 
 
 @app.post("/webhook")
@@ -134,7 +156,7 @@ async def webhook(
     except IgnoredEvent as exc:
         return _skip(str(exc))
 
-    match = _match_app(request.app.state.apps, intent)
+    match = match_app(request.app.state.apps, intent)
     if isinstance(match, str):
         return _skip(match)
 
@@ -179,7 +201,12 @@ async def status(request: Request, authorization: str | None = Header(default=No
         }
         for target in request.app.state.apps.values()
     }
-    return JSONResponse({"apps": apps, **request.app.state.queue.snapshot()})
+    reconciliador = request.app.state.reconciliador
+    return JSONResponse({
+        "apps": apps,
+        **request.app.state.queue.snapshot(),
+        "reconciliacion": reconciliador.snapshot() if reconciliador else {"activo": False},
+    })
 
 
 @app.post("/reload")

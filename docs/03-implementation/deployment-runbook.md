@@ -133,7 +133,51 @@ SSH.
 | `202 ignored: workflow_run conclusion='failure'` | La build falló | Correcto: arreglar la build |
 | `202 ignored: delivery ... ya procesado` | Reentrega de GitHub | Correcto. Para forzar, usar *Redeliver* tras reiniciar el servicio |
 | `413 payload demasiado grande` | Payload por encima de 1 MiB | Muy improbable; revisar `MAX_BODY_BYTES` |
-| Sin respuesta / timeout | El túnel está caído | `systemctl status cloudflared` |
+| Sin respuesta / timeout | El túnel, la red o el receptor no respondieron en 10 s. **GitHub no reintenta** | Si el reconciliador está activo, lo recupera solo en unos minutos (ver abajo). Si no, *Redeliver* a mano. Diagnóstico: `docker logs deploy-service-tunnel` y el balanceo de las WAN |
+| `reconciliacion-run-<id>` en el histórico | El reconciliador recuperó un webhook perdido | Correcto. Buscar en el journal el `WARNING` «entrega perdida» y averiguar por qué no llegó |
+
+## Reconciliador de entregas perdidas
+
+ADR-0011. GitHub marca como fallida una entrega que no recibió respuesta en 10 s, y **no la
+vuelve a enviar**. El reconciliador consulta cada `RECONCILE_INTERVAL` segundos el último run
+correcto del workflow de cada app y encola lo que falte. Nunca repite un commit que ya figure
+en `/var/log/cd-receiver/<app>.jsonl`, ni pisa una alineación a mano posterior al run.
+
+**Activación, en dos pasos.** Primero observar, después actuar:
+
+```bash
+# 1. /etc/cd-receiver/receiver.env (sudoedit): observar
+#      RECONCILE_INTERVAL=300
+#      RECONCILE_DRY_RUN=true
+#      RECONCILE_TOKEN=github_pat_...   # solo si algun repo es privado
+sudo systemctl restart cd-receiver
+
+# 2. Tras un ciclo (5 min), revisar lo que HABRIA hecho: no debe haber "desplegar"
+#    inesperados. Cada app sale como "al dia" u "omitir" con su motivo.
+curl -s http://127.0.0.1:9000/status | jq '.reconciliacion'
+sudo journalctl -u cd-receiver --since '-15 min' | grep -E 'observar|reconcili'
+
+# 3. Dejarlo actuar: quitar RECONCILE_DRY_RUN (o ponerlo a false) y reiniciar.
+```
+
+**El token**, solo si algún repo es privado o hay muchos: un *fine-grained personal access
+token* con acceso a los repos del inventario y un único permiso de repositorio, **Actions:
+Read-only**. Nada más: ni Contents, ni Webhooks, ni Packages. Si un repo privado no está
+incluido, sale en `errores` como `HTTP 404`.
+
+| En `/status → reconciliacion` | Significa |
+|---|---|
+| `al dia` | Corre el tag del último run correcto |
+| `omitir: ese commit ya se intento` | Ya se desplegó o falló (rollback). No se repite: para forzarlo, *Redeliver* |
+| `omitir: el estado (...) es posterior al run` | Alguien desplegó o alineó a mano después del build. Manda eso |
+| `omitir: el run acaba de terminar` | Se espera al webhook `RECONCILE_GRACE` segundos |
+| `omitir: sin runs correctos recientes` | El workflow no tuvo runs correctos entre los últimos 100 de la rama. Normal en servicios que cambian poco |
+| `omitir: solo se reconcilian apps workflow_run...` | La app es `push` o no nombra `workflow` |
+| `errores: HTTP 404` | Repo privado sin token, o token sin acceso a él |
+| `errores: HTTP 403/429` | Límite de la API agotado: subir el intervalo o añadir token |
+
+**Rollback manual con el reconciliador activo.** Basta con el procedimiento de siempre: el
+commit que se retira ya figura en el histórico, así que el reconciliador no lo vuelve a poner.
 
 ## Avisos de despliegue
 

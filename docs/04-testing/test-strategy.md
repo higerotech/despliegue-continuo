@@ -172,6 +172,7 @@ Contrastado con el `stateDiagram-v2` de `docs/02-design/architecture.md`:
 | Recibido → Ignorado (build fallida) | `test_events.py::test_no_despliega_si_el_workflow_no_tuvo_exito` (4 casos) | Automático |
 | Recibido → Ignorado (ping, tags, borrado de rama) | `test_events.py` (7 casos) | Automático |
 | Recibido → Encolado | `test_webhook.py::test_encola_el_despliegue_cuando_todo_encaja` | Automático |
+| (webhook perdido) Reconciliado → Encolado | `test_reconcile.py::TestCiclo::test_encola_lo_perdido_con_un_delivery_que_dice_de_donde_viene` y una prueba por cada motivo para no encolar (`TestPlanificar`) | Automático |
 | Desplegando → Verificando → **Vivo** | `test_rollback_e2e.py::test_el_despliegue_sano_deja_el_servicio_respondiendo` | **Automático** |
 | Verificando → Fallido → **Revirtiendo → Revertido** | `test_rollback_e2e.py::test_el_rollback_restaura_la_version_anterior` | **Automático** |
 | Fallido → **Detenido** (sin tag anterior) | `test_rollback_e2e.py::test_sin_version_anterior_no_hay_rollback` | **Automático** |

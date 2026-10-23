@@ -26,7 +26,7 @@ C4Container
     title Contenedores — Despliegue continuo en el servidor local
 
     Person_Ext(operador, "Operador", "Consulta estado, recarga inventario")
-    System_Ext(github, "GitHub", "Emite webhooks firmados")
+    System_Ext(github, "GitHub", "Emite webhooks firmados; API de Actions")
     System_Ext(ghcr, "GHCR", "Registro de imagenes")
     System_Ext(cloudflare, "Cloudflare Edge", "TLS y filtro por ruta")
 
@@ -51,13 +51,16 @@ C4Container
     Rel(receptor, apps, "Healthcheck", "HTTP")
     Rel(receptor, estado, "Persiste resultado", "Escritura atomica")
     Rel(operador, receptor, "Consulta y recarga", "HTTP loopback")
+    Rel(receptor, github, "Consulta el ultimo run correcto (reconciliador, ADR-0011)", "HTTPS saliente, solo lectura")
 
     UpdateElementStyle(receptor, $bgColor="#1168bd", $fontColor="#ffffff", $borderColor="#0b4884")
     UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
 ```
 
 *Eje estructura — fase 02-design. El socket-proxy es el único que toca el daemon; el receptor
-nunca ve `/var/run/docker.sock`.*
+nunca ve `/var/run/docker.sock`. La consulta a la API de GitHub es la única conexión que el
+receptor abre hacia fuera (además del canal de avisos), y es opcional: GitHub no reintenta un
+webhook perdido, y el reconciliador lo recupera (ADR-0011).*
 
 ## Componentes internos del receptor
 
@@ -68,6 +71,7 @@ C4Component
     Container_Ext(cfd, "cloudflared", "Tunel", "Entrega la peticion")
     ContainerDb_Ext(estado, "Estado en disco", "JSON", "Tag actual y anterior")
     Container_Ext(proxy, "Socket-proxy", "API Docker", "Superficie recortada")
+    System_Ext(ghapi, "API de GitHub", "Runs de Actions")
 
     Container_Boundary(receptor, "Receptor") {
         Component(api, "main", "FastAPI", "Endpoints webhook, health, status y reload")
@@ -76,6 +80,7 @@ C4Component
         Component(config, "config", "dataclasses + PyYAML", "Ajustes del proceso e inventario de apps")
         Component(cola, "queue", "asyncio", "Un worker por aplicacion; serializa despliegues")
         Component(deployer, "deployer", "asyncio.subprocess + httpx", "Pull, arranque, healthcheck y rollback")
+        Component(reconciliador, "reconcile", "asyncio + httpx", "Recupera los builds cuyo webhook no llego")
     }
 
     Rel(cfd, api, "POST /webhook", "HTTP")
@@ -86,6 +91,9 @@ C4Component
     Rel(cola, deployer, "Ejecuta el despliegue", "await")
     Rel(deployer, proxy, "docker compose pull y up", "DOCKER_HOST")
     Rel(deployer, estado, "Lee y escribe el tag", "ficheros")
+    Rel(reconciliador, ghapi, "Ultimo run correcto por repo y rama", "HTTPS")
+    Rel(reconciliador, eventos, "Mismo filtro que el webhook", "llamada")
+    Rel(reconciliador, cola, "Encola lo perdido", "llamada")
 
     UpdateElementStyle(seguridad, $bgColor="#c0392b", $fontColor="#ffffff")
     UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
@@ -266,6 +274,9 @@ del resto: si GitHub cambia el payload, solo `events.py` se toca.*
 | Placement: on-prem, GHCR y GitHub Actions | [ADR-0006](../00-project/adr/0006-placement-mecanismo-cd-y-registro.md) |
 | El inventario es la allowlist, fuera del repo | [ADR-0007](../00-project/adr/0007-inventario-como-allowlist.md) |
 | Encolar y responder `202` con motivo | [ADR-0008](../00-project/adr/0008-cola-por-app-y-respuesta-202.md) |
+| Avisar del resultado por un webhook genérico | [ADR-0009](../00-project/adr/0009-aviso-de-despliegues-por-webhook-generico.md) |
+| Varias apps por repositorio; el workflow elige | [ADR-0010](../00-project/adr/0010-varias-apps-por-repositorio.md) |
+| Reconciliador de entregas perdidas | [ADR-0011](../00-project/adr/0011-reconciliador-de-entregas-perdidas.md) |
 
 ## Límites conocidos de la arquitectura
 

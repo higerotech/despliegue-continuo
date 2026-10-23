@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .config import AppConfig
+
 _EMPTY_SHA = "0" * 40
 
 
@@ -80,3 +82,37 @@ def _parse_workflow_run(payload: dict[str, Any]) -> DeployIntent:
         event="workflow_run",
         workflow=run.get("name"),
     )
+
+
+def match_app(apps: dict[str, AppConfig], intent: DeployIntent) -> AppConfig | str:
+    """Devuelve la app a desplegar o un texto explicando por que no aplica.
+
+    La usan el webhook y el reconciliador (ADR-0011): que los dos pasen por
+    aqui garantiza que el reconciliador nunca acepta algo que el webhook
+    habria rechazado.
+    """
+    candidates = [app for app in apps.values() if app.repo == intent.repo]
+    if not candidates:
+        return f"el repo {intent.repo} no esta en el inventario de apps"
+
+    if len(candidates) == 1:
+        target = candidates[0]
+    else:
+        # Varias apps en el repo (ADR-0010): el nombre del workflow elige cual.
+        # `load_apps` garantiza que son todas workflow_run con workflow propio,
+        # asi que la coincidencia es exacta y como mucho una.
+        target = next((app for app in candidates if app.workflow == intent.workflow), None)
+        if target is None:
+            expected = ", ".join(sorted(repr(app.workflow) for app in candidates))
+            return (
+                f"workflow {intent.workflow!r} no corresponde a ninguna app de "
+                f"{intent.repo} (esperados: {expected})"
+            )
+
+    if target.event != intent.event:
+        return f"{target.name} escucha {target.event!r}, no {intent.event!r}"
+    if intent.branch != target.branch:
+        return f"rama {intent.branch!r} distinta de la desplegable ({target.branch!r})"
+    if target.workflow and intent.workflow != target.workflow:
+        return f"workflow {intent.workflow!r} distinto del esperado ({target.workflow!r})"
+    return target

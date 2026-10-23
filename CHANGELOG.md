@@ -27,6 +27,17 @@ Gate 3 → `0.4.0`, Gate 4 → `0.5.0`, Gate 5 → `1.0.0`.
 
 ### Añadido
 
+- **Reconciliador de entregas perdidas** (ADR-0011). GitHub **no reintenta** una entrega de
+  webhook fallida, y el diseño suponía que sí. El 2026-10-23, 19 entregas de un repo murieron
+  por timeout mientras una WAN del servidor entraba y salía del balanceo. Una era el
+  `completed` de un build correcto, que nunca se desplegó, y nadie se enteró. Ahora el
+  receptor consulta cada `RECONCILE_INTERVAL` segundos el último run correcto del workflow de
+  cada app y encola lo que falte. Solo recupera lo que el receptor no vio: un commit que ya se
+  intentó (incluido un rollback), uno en cola o uno alineado a mano después del run no se tocan.
+  El run pasa por el mismo filtro que un webhook. Es opt-in (`RECONCILE_INTERVAL=0` por
+  defecto), tiene un modo observar (`RECONCILE_DRY_RUN`) y publica sus decisiones en `/status`.
+  Para repos privados acepta un token de solo lectura (`RECONCILE_TOKEN`, Actions: read).
+
 - **Un repositorio puede declarar varias apps** (ADR-0010). El inventario se indexaba por
   `repo` y rechazaba un repo repetido, así que un monorepo con seis servicios solo podía
   desplegar uno. Ahora se indexa por `name`, y cuando un repo declara varias apps el nombre del
@@ -35,6 +46,14 @@ Gate 3 → `0.4.0`, Gate 4 → `0.5.0`, Gate 5 → `1.0.0`.
   se recarga. Para un repo con una sola app no cambia nada.
 
 ### Corregido
+
+- **El log publicaba la URL del canal de avisos.** httpx registraba en `INFO` cada petición con
+  su URL completa, y la de ntfy lleva el tema, que hace de contraseña. Las peticiones de httpx
+  pasan a `WARNING`, y el aviso enviado se registra sin URL. Con el reconciliador, además, cada
+  consulta a la API habría añadido una línea al journal.
+
+- **Dos textos afirmaban que GitHub reintenta las entregas fallidas**: el docstring de
+  `DeliveryCache` y el contrato de errores. No lo hace. Corregido junto con ADR-0011.
 
 - **La documentación decía que ntfy entiende el campo `text` del aviso, y no es así.** Con la
   URL de un tema a secas, ntfy publica el JSON entero como mensaje. El runbook explica ahora la

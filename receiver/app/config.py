@@ -60,6 +60,26 @@ class Settings:
     notify_url: str = ""
     notify_on: str = "failure"
     notify_timeout: float = 5.0
+    # Reconciliador (ADR-0011). Intervalo 0 = desactivado, que es el defecto
+    # por la misma razon que el canal de avisos.
+    reconcile_interval: int = 0
+    reconcile_grace: int = 120
+    reconcile_dry_run: bool = False
+    reconcile_token: str = ""
+    reconcile_api_url: str = "https://api.github.com"
+
+
+_TRUE = {"1", "true", "yes", "si", "on"}
+_FALSE = {"", "0", "false", "no", "off"}
+
+
+def _env_bool(env: dict[str, str], name: str) -> bool:
+    raw = env.get(name, "").strip().lower()
+    if raw in _TRUE:
+        return True
+    if raw in _FALSE:
+        return False
+    raise ConfigError(f"{name} debe ser true o false, recibido {raw!r}")
 
 
 def _env_int(env: dict[str, str], name: str, default: int) -> int:
@@ -84,6 +104,15 @@ def load_settings(env: dict[str, str] | None = None) -> Settings:
     if len(secret) < 32:
         raise ConfigError("WEBHOOK_SECRET debe tener al menos 32 caracteres.")
 
+    reconcile_interval = _env_int(env, "RECONCILE_INTERVAL", 0)
+    # Por debajo de un minuto no se gana nada: el margen de gracia ya retrasa
+    # cada recuperacion dos minutos, y sin token el limite es de 60 consultas/h.
+    if reconcile_interval and reconcile_interval < 60:
+        raise ConfigError("RECONCILE_INTERVAL debe ser 0 (desactivado) o al menos 60 segundos.")
+    reconcile_grace = _env_int(env, "RECONCILE_GRACE", 120)
+    if reconcile_grace < 0:
+        raise ConfigError("RECONCILE_GRACE no puede ser negativo.")
+
     return Settings(
         webhook_secret=secret,
         apps_file=Path(env.get("APPS_FILE", "/etc/cd-receiver/apps.yml")),
@@ -98,6 +127,13 @@ def load_settings(env: dict[str, str] | None = None) -> Settings:
         notify_url=env.get("NOTIFY_URL", "").strip(),
         notify_on=env.get("NOTIFY_ON", "failure").strip().lower(),
         notify_timeout=float(env.get("NOTIFY_TIMEOUT", "5") or 5),
+        reconcile_interval=reconcile_interval,
+        reconcile_grace=reconcile_grace,
+        reconcile_dry_run=_env_bool(env, "RECONCILE_DRY_RUN"),
+        reconcile_token=env.get("RECONCILE_TOKEN", "").strip(),
+        reconcile_api_url=(
+            env.get("RECONCILE_API_URL", "").strip() or "https://api.github.com"
+        ).rstrip("/"),
     )
 
 
