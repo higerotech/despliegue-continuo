@@ -38,8 +38,9 @@ La invariante es una sola: **solo se recupera lo que el receptor no vio; nunca s
 decisión ya tomada.** De ella salen las reglas, que se aplican en orden y decide la primera que
 encaja:
 
-1. Se consulta `GET /repos/{repo}/actions/runs?branch=…&status=success`, una sola petición por
-   cada par repo y rama. De ahí se toma el run más reciente del workflow de la app. **Ese run
+1. Se consulta `GET /repos/{repo}/actions/workflows/{id}/runs?branch=…&status=success`, una
+   petición por workflow del inventario; el id sale de `GET /repos/{repo}/actions/workflows`, que
+   se pide una vez y se guarda. De ahí se toma el run más reciente del workflow de la app. **Ese run
    pasa por el mismo `parse_event` y `match_app` que un webhook**, y además se descartan
    `pull_request` y los runs de forks. El reconciliador nunca acepta algo que el webhook habría
    rechazado.
@@ -88,9 +89,14 @@ por repo). Sin entrar al journal, el operador ve por qué una app no se recuper�
   visible una pérdida que antes era silenciosa.
 - Negativas / deuda asumida: solo se recupera **el último** run correcto de cada app. Si se
   perdieron dos seguidos, se despliega el más reciente, que es lo que haría un webhook.
-- Negativas / deuda asumida: si el workflow de una app no aparece entre los últimos 100 runs
-  correctos de su rama, no se concluye nada. Una pérdida es, por definición, reciente, así que
-  basta.
+- ~~Negativas / deuda asumida: si el workflow de una app no aparece entre los últimos 100 runs
+  correctos de su rama, no se concluye nada.~~ **Corregido el 2026-11-02.** La suposición de que
+  «una pérdida es reciente, así que basta» era falsa en un monorepo con workflows programados:
+  en `ves-market-watch` los 100 últimos runs correctos de `main` eran del sondeo externo (cada
+  15 min) y del E2E, y las 6 apps salían siempre «sin runs correctos recientes». Habrían perdido
+  toda recuperación sin que nadie lo notara, porque en modo observar no se ve la diferencia
+  mientras el webhook llega. Ahora se pide cada workflow por su id. Coste: una consulta por
+  workflow y ciclo, en vez de una por repo.
 - Negativas / deuda asumida: un repo con apps sin `workflow`, o con `event: push`, no se
   reconcilia. Aceptar cualquier workflow correcto del repo desplegaría con el primero que pasara.
 - Negativas / deuda asumida: una app recién añadida al inventario, sin estado ni histórico, se

@@ -25,6 +25,16 @@ Gate 3 → `0.4.0`, Gate 4 → `0.5.0`, Gate 5 → `1.0.0`.
 
 ## [Unreleased]
 
+### Corregido
+
+- **El reconciliador no veía los builds de un monorepo con workflows programados** (ADR-0011).
+  Pedía los 100 últimos runs correctos de la rama del repo entero. En `ves-market-watch` esos
+  100 eran del sondeo externo (cada 15 min) y del E2E, así que las 6 apps de midgard salían
+  siempre «sin runs correctos recientes» y ninguna se habría recuperado. En modo observar no se
+  notaba: el webhook seguía llegando. Ahora consulta los runs de cada workflow por su id. La
+  lista de workflows del repo se pide una vez y solo se repite si falta un nombre. Con los datos
+  reales del 2026-11-02 encuentra el build vigente de las 6 apps, el mismo que corre en midgard.
+
 ### Añadido
 
 - **Reconciliador de entregas perdidas** (ADR-0011). GitHub **no reintenta** una entrega de
