@@ -32,10 +32,11 @@ DESPLEGAR = "desplegar"
 AL_DIA = "al dia"
 OMITIR = "omitir"
 
-# Una pagina basta: lo que se recupera es por definicion reciente. Si el
-# workflow de una app no aparece entre los ultimos 100 runs correctos de su
-# rama, no se concluye nada y no se toca.
-_POR_PAGINA = 100
+# Los runs se piden por workflow, no por repo: en un monorepo con workflows
+# programados (un sondeo cada 15 minutos) los 100 ultimos runs correctos del
+# repo son todos del sondeo y el build de una app no aparece nunca. Una pagina
+# de su propio workflow basta: lo que se recupera es por definicion reciente.
+_POR_PAGINA = 20
 
 
 @dataclass(frozen=True)
@@ -194,6 +195,9 @@ class Reconciliador:
         self._transport = transport
         self._reloj = reloj or (lambda: datetime.now(timezone.utc))
         self._errores_avisados: dict[tuple[str, str], str] = {}
+        # repo -> {nombre del workflow: ids}. Los ids no cambian al renombrar,
+        # asi que se piden una vez y solo se vuelven a pedir si falta un nombre.
+        self._workflows: dict[str, dict[str, list[int]]] = {}
         self._ultimo: dict[str, Any] = {}
         self.recuperados = 0
 
@@ -202,7 +206,8 @@ class Reconciliador:
         return "observar" if self._settings.reconcile_dry_run else "desplegar"
 
     def consultas_por_hora(self) -> float:
-        grupos = {(a.repo, a.branch) for a in self._apps().values() if reconciliable(a)}
+        """Una consulta por workflow y ciclo; la lista de workflows va aparte y se guarda."""
+        grupos = {(a.repo, a.branch, a.workflow) for a in self._apps().values() if reconciliable(a)}
         return len(grupos) * 3600 / max(self._settings.reconcile_interval, 1)
 
     def _cabeceras(self) -> dict[str, str]:
@@ -215,22 +220,47 @@ class Reconciliador:
             cabeceras["Authorization"] = f"Bearer {self._settings.reconcile_token}"
         return cabeceras
 
-    async def _consultar(self, client: httpx.AsyncClient, repo: str, rama: str) -> list[dict]:
-        respuesta = await client.get(
-            f"/repos/{repo}/actions/runs",
-            params={
-                "branch": rama,
-                "status": "success",
-                "per_page": _POR_PAGINA,
-                "exclude_pull_requests": "true",
-            },
-        )
+    @staticmethod
+    def _comprobar(respuesta: httpx.Response) -> dict:
         if respuesta.status_code == 404:
             raise RuntimeError("HTTP 404: el repo no existe o es privado y falta RECONCILE_TOKEN")
         if respuesta.status_code in (403, 429):
             raise RuntimeError(f"HTTP {respuesta.status_code}: limite de la API o token sin permiso")
         respuesta.raise_for_status()
-        return list(respuesta.json().get("workflow_runs") or [])
+        return respuesta.json()
+
+    async def _ids(self, client: httpx.AsyncClient, repo: str, nombres: set[str]) -> dict[str, list[int]]:
+        ids = self._workflows.get(repo)
+        if ids is None or not nombres.issubset(ids):
+            datos = self._comprobar(await client.get(
+                f"/repos/{repo}/actions/workflows", params={"per_page": 100}
+            ))
+            ids = {}
+            for workflow in datos.get("workflows") or []:
+                if workflow.get("name") and workflow.get("id"):
+                    ids.setdefault(workflow["name"], []).append(int(workflow["id"]))
+            self._workflows[repo] = ids
+        return ids
+
+    async def _consultar(
+        self, client: httpx.AsyncClient, repo: str, rama: str, nombres: set[str]
+    ) -> list[dict]:
+        ids = await self._ids(client, repo, nombres)
+        runs: list[dict] = []
+        # Un nombre que no existe en el repo no se consulta: `planificar` lo
+        # explica como "sin runs correctos" sin tapar a las demas apps del repo.
+        for ident in sorted(i for nombre in nombres for i in ids.get(nombre, [])):
+            datos = self._comprobar(await client.get(
+                f"/repos/{repo}/actions/workflows/{ident}/runs",
+                params={
+                    "branch": rama,
+                    "status": "success",
+                    "per_page": _POR_PAGINA,
+                    "exclude_pull_requests": "true",
+                },
+            ))
+            runs.extend(datos.get("workflow_runs") or [])
+        return runs
 
     def _registrar_error(self, clave: tuple[str, str], error: str | None) -> None:
         """Avisa en el log al cambiar el error de un repo, no en cada ciclo."""
@@ -244,7 +274,10 @@ class Reconciliador:
 
     async def ciclo(self) -> list[Decision]:
         apps = self._apps()
-        grupos = sorted({(a.repo, a.branch) for a in apps.values() if reconciliable(a)})
+        grupos: dict[tuple[str, str], set[str]] = {}
+        for a in apps.values():
+            if reconciliable(a):
+                grupos.setdefault((a.repo, a.branch), set()).add(str(a.workflow))
         runs: dict[tuple[str, str], list[dict]] = {}
         errores: dict[tuple[str, str], str] = {}
 
@@ -254,9 +287,9 @@ class Reconciliador:
             timeout=10.0,
             transport=self._transport,
         ) as client:
-            for clave in grupos:
+            for clave in sorted(grupos):
                 try:
-                    runs[clave] = await self._consultar(client, *clave)
+                    runs[clave] = await self._consultar(client, *clave, grupos[clave])
                 except Exception as exc:  # una caida de red no debe parar el resto
                     errores[clave] = str(exc) or type(exc).__name__
                 self._registrar_error(clave, errores.get(clave))

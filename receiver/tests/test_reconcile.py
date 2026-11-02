@@ -227,18 +227,40 @@ def ajustes(**extra):
     return load_settings(env)
 
 
+WORKFLOWS = [
+    {"id": 11, "name": "build-api"},
+    {"id": 12, "name": "build-worker"},
+    {"id": 13, "name": "Sondeo externo"},
+]
+
+
 def api(runs: list[dict], estado: int = 200, registro: list | None = None):
+    """La API de GitHub: la lista de workflows del repo y los runs de cada uno.
+
+    Cualquier otra ruta, incluida `/actions/runs` del repo entero, responde 404.
+    """
     def responder(peticion: httpx.Request) -> httpx.Response:
         if registro is not None:
             registro.append(peticion)
-        return httpx.Response(estado, json={"total_count": len(runs), "workflow_runs": runs})
+        if estado != 200:
+            return httpx.Response(estado, json={})
+        ruta = peticion.url.path
+        if ruta == f"/repos/{REPO}/actions/workflows":
+            return httpx.Response(200, json={"total_count": len(WORKFLOWS), "workflows": WORKFLOWS})
+        prefijo = f"/repos/{REPO}/actions/workflows/"
+        if ruta.startswith(prefijo) and ruta.endswith("/runs"):
+            ident = int(ruta[len(prefijo):-len("/runs")])
+            nombres = {w["name"] for w in WORKFLOWS if w["id"] == ident}
+            propios = [r for r in runs if r.get("name") in nombres]
+            return httpx.Response(200, json={"total_count": len(propios), "workflow_runs": propios})
+        return httpx.Response(404, json={})
     return httpx.MockTransport(responder)
 
 
-def reconciliador(transport, cola=None, **extra):
-    app = hacer_app()
+def reconciliador(transport, cola=None, apps=None, **extra):
+    inventario = {a.name: a for a in (apps or [hacer_app()])}
     return Reconciliador(
-        ajustes(**extra), apps=lambda: {app.name: app}, deployer=DeployerFalso(),
+        ajustes(**extra), apps=lambda: inventario, deployer=DeployerFalso(),
         queue=cola if cola is not None else ColaFalsa(), transport=transport, reloj=lambda: AHORA,
     )
 
@@ -262,11 +284,47 @@ class TestCiclo:
     async def test_consulta_la_rama_solo_runs_correctos_y_manda_el_token(self):
         registro: list[httpx.Request] = []
         await reconciliador(api([], registro=registro), RECONCILE_TOKEN="ghp_x").ciclo()
-        (peticion,) = registro
-        assert peticion.url.path == f"/repos/{REPO}/actions/runs"
+        lista, peticion = registro
+        assert lista.url.path == f"/repos/{REPO}/actions/workflows"
+        assert peticion.url.path == f"/repos/{REPO}/actions/workflows/11/runs"
         assert peticion.url.params["branch"] == "main"
         assert peticion.url.params["status"] == "success"
-        assert peticion.headers["Authorization"] == "Bearer ghp_x"
+        assert all(p.headers["Authorization"] == "Bearer ghp_x" for p in registro)
+
+    async def test_el_build_aparece_aunque_otro_workflow_llene_los_runs_del_repo(self):
+        # 2026-11-02, ves-market-watch: los 100 ultimos runs correctos del repo
+        # eran del sondeo programado y ningun build-* entraba en la pagina.
+        sondeo = [
+            hacer_run(nombre="Sondeo externo", sha="f" * 40, run_id=500 + i, hace=timedelta(minutes=i))
+            for i in range(100)
+        ]
+        cola = ColaFalsa()
+        # El build es mas viejo que los 100 runs del sondeo (de 0 a 99 minutos).
+        await reconciliador(api(sondeo + [hacer_run(hace=timedelta(hours=2))]), cola).ciclo()
+        assert cola.encolados == [("morocota-api", SHA_NUEVO, "reconciliacion-run-101")]
+
+    async def test_la_lista_de_workflows_se_pide_una_vez(self):
+        registro: list[httpx.Request] = []
+        rec = reconciliador(api([], registro=registro))
+        await rec.ciclo()
+        await rec.ciclo()
+        rutas = [p.url.path for p in registro]
+        assert rutas.count(f"/repos/{REPO}/actions/workflows") == 1
+        assert rutas.count(f"/repos/{REPO}/actions/workflows/11/runs") == 2
+
+    async def test_un_workflow_que_no_existe_no_tapa_a_las_demas_apps_del_repo(self):
+        apps = [hacer_app(), hacer_app("morocota-worker", workflow="build-renombrado")]
+        cola = ColaFalsa()
+        decisiones = await reconciliador(api([hacer_run()]), cola, apps=apps).ciclo()
+        por_app = {d.app: d for d in decisiones}
+        assert por_app["morocota-api"].accion == DESPLEGAR
+        assert por_app["morocota-worker"].accion == OMITIR
+        assert "sin runs correctos recientes de 'build-renombrado'" in por_app["morocota-worker"].motivo
+        assert [e[0] for e in cola.encolados] == ["morocota-api"]
+
+    def test_las_consultas_por_hora_cuentan_cada_workflow(self):
+        apps = [hacer_app(), hacer_app("morocota-worker", workflow="build-worker")]
+        assert reconciliador(api([]), apps=apps).consultas_por_hora() == 24
 
     async def test_sin_token_no_manda_cabecera_de_autorizacion(self):
         registro: list[httpx.Request] = []

@@ -171,7 +171,7 @@ incluido, sale en `errores` como `HTTP 404`.
 | `omitir: ese commit ya se intento` | Ya se desplegó o falló (rollback). No se repite: para forzarlo, *Redeliver* |
 | `omitir: el estado (...) es posterior al run` | Alguien desplegó o alineó a mano después del build. Manda eso |
 | `omitir: el run acaba de terminar` | Se espera al webhook `RECONCILE_GRACE` segundos |
-| `omitir: sin runs correctos recientes` | El workflow no tuvo runs correctos entre los últimos 100 de la rama. Normal en servicios que cambian poco |
+| `omitir: sin runs correctos recientes` | El workflow no tuvo runs correctos entre sus últimos 20 de la rama, o el nombre de `workflow` del inventario no existe en el repo (revisa que coincida con el `name:` del YAML). Una app que ya corre con su último build sale `al dia`, no esto |
 | `omitir: solo se reconcilian apps workflow_run...` | La app es `push` o no nombra `workflow` |
 | `errores: HTTP 404` | Repo privado sin token, o token sin acceso a él |
 | `errores: HTTP 403/429` | Límite de la API agotado: subir el intervalo o añadir token |
